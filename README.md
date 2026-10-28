@@ -69,3 +69,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 The platform (shipfn-api) depends on this package and copies the installed version into every build, so a release only reaches deployed functions once the API is updated to it. See [RELEASING.md](RELEASING.md).
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE). Copyright 2026 Nomial. "Callables" is a trademark of Nomial and is not covered by the license.
