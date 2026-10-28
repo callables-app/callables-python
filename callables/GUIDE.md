@@ -193,7 +193,7 @@ def clean_contacts(sheet: Annotated[File, accept(".csv")]) -> File:
 ## Runtime environment
 
 - Each run gets a fresh sandbox on Debian 13 (trixie). It runs as a non-root user and has internet access.
-- **Python version:** taken from `.python-version` (e.g. `3.13`), else the newest version your `pyproject.toml` `requires-python` allows, else 3.12. Supported: 3.10 to 3.14.
+- **Python version:** taken from `.python-version` (e.g. `3.13`), else the newest version your `pyproject.toml` `requires-python` allows, else 3.12. Supported: 3.11 to 3.14.
 - **Python dependencies** come from `requirements.txt` at the repo root, or from `[project].dependencies` in `pyproject.toml`. **Don't list `callables`.** The platform installs its own matching copy.
 - **Automations in a subfolder:** by default the whole repo is built. To build only one folder, add `callables.toml` at the repo root containing `root = "automations"` (or `[tool.callables] root = "automations"` in `pyproject.toml`). Then only that folder goes into the image, and its own `requirements.txt`, `apt.txt` and `.python-version` are used. Code in it can't import from the rest of the repo. `call check`, `local` and `manifest` use the same folder when run from the repo root.
 - **Writable space:** your home directory (`~`), and `/tmp`, which is limited to 256 MB. Your code in `/app` is read-only. Every run starts fresh, so nothing persists between runs. Keep state in your own database or storage.

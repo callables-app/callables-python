@@ -7,7 +7,7 @@ name = "callables"
 dynamic = ["version"]
 description = "Decorate Python functions and push them to Callables: forms, schedules and run history for your team."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
