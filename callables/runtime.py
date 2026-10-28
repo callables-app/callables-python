@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
-from shipfn.files import File, save_file, saved_files
+from callables.files import File, save_file, saved_files
 
 RESULT_MARKER = "__SHIPFN_RESULT__"
 # Lines the platform shows only to the function's builders (end users never see stack traces)

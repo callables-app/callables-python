@@ -1,4 +1,4 @@
-"""`shipfn manifest` and `shipfn run` are what the platform calls inside the image; the rest are for builders
+"""`call manifest` and `call run` are what the platform calls inside the image; the rest are for builders
 (and their coding agents: `--json` gives one parseable object on stdout)."""
 import argparse
 import contextlib
@@ -7,14 +7,14 @@ import sys
 import traceback
 from pathlib import Path
 
-ROOT_HELP = "Folder to build from (default: this repo, or the root set in shipfn.toml / [tool.shipfn])"
+ROOT_HELP = "Folder to build from (default: this repo, or the root set in callables.toml / [tool.callables])"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="shipfn", description="Deploy Python functions as forms for your team.",
-        epilog="Run your own functions like commands: shipfn <group> <action> --flag value (or shipfn <function> ...). "
-               "`shipfn <group> --help` lists a group's actions; `shipfn check` lists everything.")
+        prog="call", description="Deploy Python functions as forms for your team.",
+        epilog="Run your own functions like commands: call <group> <action> --flag value (or call <function> ...). "
+               "`call <group> --help` lists a group's actions; `call check` lists everything.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_check = sub.add_parser("check", help="Find the problems a deploy would hit, with fixes (exit 1 on errors)")
@@ -46,18 +46,18 @@ def main(argv: list[str] | None = None) -> int:
 
     argv = sys.argv[1:] if argv is None else argv
     if argv and not argv[0].startswith("-") and argv[0] not in sub.choices:
-        return _command(argv)  # shipfn <group> <action> --flags, or shipfn <function> --flags
+        return _command(argv)  # call <group> <action> --flags, or call <function> --flags
 
     args = parser.parse_args(argv)
 
     if args.command == "docs":
-        from shipfn.init import guide
+        from callables.init import guide
 
         print(guide())
         return 0
 
     if args.root is None:  # same folder the platform would build
-        from shipfn.project import ConfigError, build_root
+        from callables.project import ConfigError, build_root
 
         try:
             root, source = build_root(Path.cwd())
@@ -70,13 +70,13 @@ def main(argv: list[str] | None = None) -> int:
         root = Path(args.root).resolve()
 
     if args.command == "manifest":
-        from shipfn.manifest import build_manifest
+        from callables.manifest import build_manifest
 
         print(json.dumps(build_manifest(root)))
         return 0
 
     if args.command == "run":
-        from shipfn.runtime import run
+        from callables.runtime import run
 
         return run(args.entrypoint, root)
 
@@ -87,18 +87,18 @@ def main(argv: list[str] | None = None) -> int:
         return _local(root, args.name, _parse_inputs(args.input), args.json)
 
     if args.command == "init":
-        from shipfn.init import init_project
+        from callables.init import init_project
 
         for path, what in init_project(root, example=not args.no_example, agents=not args.no_agents):
             print(f"  {what:<10} {path}")
-        print("\nNext: `shipfn check`, then `shipfn local <name>` to try a function. Push to deploy.")
+        print("\nNext: `call check`, then `call local <name>` to try a function. Push to deploy.")
         return 0
 
     return 1
 
 
 def _check(root: Path, as_json: bool) -> int:
-    from shipfn.checks import check_project
+    from callables.checks import check_project
 
     # Imports run user code; keep its prints off stdout so --json stays parseable
     with contextlib.redirect_stdout(sys.stderr):
@@ -146,9 +146,9 @@ def _field_errors(exc) -> dict[str, str]:
 
 
 def _command(argv: list[str]) -> int:
-    from shipfn.commands import command_tree, find, parse_inputs
-    from shipfn.manifest import build_manifest
-    from shipfn.project import ConfigError, build_root
+    from callables.commands import command_tree, find, parse_inputs
+    from callables.manifest import build_manifest
+    from callables.project import ConfigError, build_root
 
     try:
         root, _ = build_root(Path.cwd())
@@ -169,8 +169,8 @@ def _command(argv: list[str]) -> int:
             print(f"usage: {prog} <action> [--flags]\n\n{group[0]['group']['title']}", file=sys.stdout if asked else sys.stderr)
             print(command_tree(group).split("\n", 1)[1], file=sys.stdout if asked else sys.stderr)
             return 0 if asked else 2
-        print(f"shipfn: '{argv[0]}' isn't a command, group or function. You can run:\n"
-              f"{command_tree(manifest['functions'])}\n\nBuilt-in commands: shipfn --help", file=sys.stderr)
+        print(f"call: '{argv[0]}' isn't a command, group or function. You can run:\n"
+              f"{command_tree(manifest['functions'])}\n\nBuilt-in commands: call --help", file=sys.stderr)
         return 2
     return _local(root, fn["name"], parse_inputs(prog, fn, rest), as_json=False, follow=True)
 
@@ -232,7 +232,7 @@ def _pick(prompt: str, count: int) -> int | None:
 
 def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict]) -> int:
     """The terminal side of `next`: pick a row, pick what to do with it, fill in what's left, run it."""
-    from shipfn.commands import _coerce, _resolve
+    from callables.commands import _coerce, _resolve
 
     row = rows[0] if len(rows) == 1 else None
     if row is None:
@@ -271,10 +271,10 @@ def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict]) -> in
 def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = False) -> int:
     from pydantic import ValidationError
 
-    from shipfn.decorator import registry
-    from shipfn.files import output_dir, saved_files
-    from shipfn.manifest import build_manifest
-    from shipfn.runtime import finish
+    from callables.decorator import registry
+    from callables.files import output_dir, saved_files
+    from callables.manifest import build_manifest
+    from callables.runtime import finish
 
     stdout = sys.stdout  # the real one, even while user code's prints are redirected
 

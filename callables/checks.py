@@ -1,4 +1,4 @@
-"""`shipfn check`: the problems a deploy would hit, found on this machine before pushing.
+"""`call check`: the problems a deploy would hit, found on this machine before pushing.
 
 Errors match what makes the platform reject a deploy; warnings match what it would ignore or cap.
 """
@@ -7,9 +7,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from shipfn.decorator import registry
-from shipfn.files import FILE_FORMAT
-from shipfn.manifest import build_manifest
+from callables.decorator import registry
+from callables.files import FILE_FORMAT
+from callables.manifest import build_manifest
 
 MAX_TIMEOUT = 900  # the platform caps timeouts here
 SECRET_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -89,7 +89,7 @@ def check_project(root: Path) -> dict[str, Any]:
                              "Fix this first: if any module fails to import, the platform publishes nothing"))
     if not manifest["functions"] and not manifest["errors"]:
         issues.append(_issue("error", "No @deploy functions found",
-                             fix="Decorate a function: `from shipfn import deploy` then `@deploy` above `def ...`"))
+                             fix="Decorate a function: `from callables import deploy` then `@deploy` above `def ...`"))
     elif manifest["functions"] and all(f.get("local_only") for f in manifest["functions"]):
         issues.append(_issue("warning", "Every function is a local @command, so a deploy publishes nothing",
                              fix="Use @deploy for anything teammates should run"))
@@ -97,7 +97,7 @@ def check_project(root: Path) -> dict[str, Any]:
         issues.extend(_check_function(fn))
     if not (Path(root) / "requirements.txt").is_file() and not (Path(root) / "pyproject.toml").is_file():
         issues.append(_issue("warning", "No requirements.txt, so only the standard library is installed",
-                             fix="List your dependencies (not shipfn itself) in requirements.txt"))
+                             fix="List your dependencies (not callables itself) in requirements.txt"))
     return {
         "ok": not any(i["level"] == "error" for i in issues),
         "functions": [

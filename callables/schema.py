@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, create_model
 
-from shipfn.files import File
+from callables.files import File
 
 SUPPORTED_TYPES = ("str, int, float, bool, date, datetime, Literal[...], an Enum, list[...] of those, "
                    "X | None, a Pydantic model, or File")

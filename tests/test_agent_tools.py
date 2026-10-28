@@ -3,11 +3,11 @@ import json
 
 import pytest
 
-from shipfn import registry
-from shipfn import files as files_mod
-from shipfn.cli import main
-from shipfn.init import SECTION_END, SECTION_START, init_project
-from shipfn.schema import input_model
+from callables import registry
+from callables import files as files_mod
+from callables.cli import main
+from callables.init import SECTION_END, SECTION_START, init_project
+from callables.schema import input_model
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def run_json(capsys, argv):
 def test_check_passes_a_clean_project(tmp_path, capsys):
     (tmp_path / "requirements.txt").write_text("")
     (tmp_path / "fx_ag_clean.py").write_text(
-        "from shipfn import deploy\n"
+        "from callables import deploy\n"
         "@deploy\n"
         "def greet(name: str) -> str:\n"
         "    '''Says hello.'''\n"
@@ -45,9 +45,9 @@ def test_check_passes_a_clean_project(tmp_path, capsys):
 
 
 def test_check_reports_errors_and_warnings_with_fixes(tmp_path, capsys):
-    (tmp_path / "fx_ag_broken.py").write_text("from shipfn import deploy\nimport not_a_real_module\n")
+    (tmp_path / "fx_ag_broken.py").write_text("from callables import deploy\nimport not_a_real_module\n")
     (tmp_path / "fx_ag_warn.py").write_text(
-        "from shipfn import deploy, File\n"
+        "from callables import deploy, File\n"
         "@deploy(timeout=2000, secrets=['bad-name'], schedule='0 9 * * MON')\n"
         "def sloppy(x, sheet: File):\n"
         "    return x\n")
@@ -80,7 +80,7 @@ def test_unsupported_input_type_names_the_parameter():
 
 def test_local_json_success_keeps_prints_off_stdout(tmp_path, capsys):
     (tmp_path / "fx_ag_local.py").write_text(
-        "from shipfn import deploy, save_file\n"
+        "from callables import deploy, save_file\n"
         "@deploy\n"
         "def total(a: int, b: int = 2) -> dict:\n"
         "    print('working')\n"
@@ -95,7 +95,7 @@ def test_local_json_success_keeps_prints_off_stdout(tmp_path, capsys):
 
 def test_local_json_reports_field_errors_and_exceptions(tmp_path, capsys):
     (tmp_path / "fx_ag_fail.py").write_text(
-        "from shipfn import deploy\n"
+        "from callables import deploy\n"
         "@deploy\n"
         "def boom(n: int) -> str:\n"
         "    raise ValueError(f'No deals for {n}')\n")
@@ -112,7 +112,7 @@ def test_local_json_reports_field_errors_and_exceptions(tmp_path, capsys):
 def test_docs_prints_the_guide(capsys):
     assert main(["docs"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("# Writing Shipfn automations") and "shipfn check" in out
+    assert out.startswith("# Writing Callables automations") and "call check" in out
 
 
 def test_init_sets_up_a_repo_and_is_safe_to_rerun(tmp_path):
@@ -120,13 +120,13 @@ def test_init_sets_up_a_repo_and_is_safe_to_rerun(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("Be brief.\n")
     done = dict(init_project(tmp_path))
     assert done["automations.py"] == "created" and done["requirements.txt"] == "created"
-    assert done[".claude/skills/shipfn/SKILL.md"] == "created"
+    assert done[".claude/skills/callables/SKILL.md"] == "created"
     assert done["AGENTS.md"] == "updated" and done["CLAUDE.md"] == "updated"
-    skill = (tmp_path / ".claude/skills/shipfn/SKILL.md").read_text()
-    assert skill.startswith("---\nname: shipfn\n") and "# Writing Shipfn automations" in skill
+    skill = (tmp_path / ".claude/skills/callables/SKILL.md").read_text()
+    assert skill.startswith("---\nname: callables\n") and "# Writing Callables automations" in skill
     agents = (tmp_path / "AGENTS.md").read_text()
     assert agents.startswith("# House rules\n\nUse tabs.\n\n" + SECTION_START) and agents.rstrip().endswith(SECTION_END)
-    assert "shipfn-output/" in (tmp_path / ".gitignore").read_text()
+    assert "callables-output/" in (tmp_path / ".gitignore").read_text()
 
     # The example passes check
     registry.clear()
@@ -135,13 +135,25 @@ def test_init_sets_up_a_repo_and_is_safe_to_rerun(tmp_path):
     # Re-running changes nothing and never duplicates the section
     (tmp_path / "automations.py").write_text("# mine now\n")
     again = dict(init_project(tmp_path))
-    assert again["AGENTS.md"] == "unchanged" and again[".claude/skills/shipfn/SKILL.md"] == "unchanged"
+    assert again["AGENTS.md"] == "unchanged" and again[".claude/skills/callables/SKILL.md"] == "unchanged"
     assert "skipped" in again["automations.py"] and (tmp_path / "automations.py").read_text() == "# mine now\n"
     assert (tmp_path / "AGENTS.md").read_text().count(SECTION_START) == 1
-    assert (tmp_path / ".gitignore").read_text().count("shipfn-output") == 1
+    assert (tmp_path / ".gitignore").read_text().count("callables-output") == 1
 
     # An outdated section is refreshed in place
     (tmp_path / "AGENTS.md").write_text(f"top\n{SECTION_START}\nold\n{SECTION_END}\nbottom\n")
     assert dict(init_project(tmp_path, example=False))["AGENTS.md"] == "updated"
+
+
+def test_init_replaces_what_the_shipfn_version_wrote(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("top\n<!-- shipfn:start -->\nold\n<!-- shipfn:end -->\nbottom\n")
+    old_skill = tmp_path / ".claude/skills/shipfn/SKILL.md"
+    old_skill.parent.mkdir(parents=True)
+    old_skill.write_text("old guide")
+    done = dict(init_project(tmp_path, example=False))
+    assert done[".claude/skills/shipfn/SKILL.md"].startswith("removed") and not old_skill.parent.exists()
+    agents = (tmp_path / "AGENTS.md").read_text()
+    assert "shipfn:start" not in agents and agents.count(SECTION_START) == 1
+    assert agents.startswith("top\n" + SECTION_START) and agents.endswith(SECTION_END + "\nbottom\n")
     refreshed = (tmp_path / "AGENTS.md").read_text()
     assert refreshed.startswith("top\n") and refreshed.endswith("bottom\n") and "old" not in refreshed

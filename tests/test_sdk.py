@@ -7,9 +7,9 @@ from typing import Literal
 import pytest
 from pydantic import BaseModel
 
-from shipfn import deploy, registry
-from shipfn.runtime import RESULT_MARKER, run
-from shipfn.schema import input_schema, output_kind
+from callables import deploy, registry
+from callables.runtime import RESULT_MARKER, run
+from callables.schema import input_schema, output_kind
 
 
 class Color(str, Enum):
@@ -95,7 +95,7 @@ def test_runtime_emits_result_and_errors(tmp_path, capsys, monkeypatch):
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
     (pkg / "m.py").write_text(
-        "from datetime import date\nfrom shipfn import deploy\n"
+        "from datetime import date\nfrom shipfn import deploy\n"  # the old import name still deploys
         "@deploy\ndef rt_ok(n: int = 2) -> list[dict]:\n    print('working')\n    return [{'n': n, 'd': date(2026, 1, 1)}]\n"
         "@deploy\ndef rt_bad() -> None:\n    raise ValueError('nope')\n"
     )
@@ -113,7 +113,7 @@ def test_runtime_emits_result_and_errors(tmp_path, capsys, monkeypatch):
 
 def test_dataframes_keep_plain_dates_and_null_missing_values():
     pd = pytest.importorskip("pandas")
-    from shipfn.runtime import to_jsonable
+    from callables.runtime import to_jsonable
 
     df = pd.DataFrame({"week": [date(2026, 8, 3), None], "at": [pd.Timestamp("2026-08-03 10:00", tz="UTC"), pd.NaT],
                        "trials": [3, 4], "rate": [0.5, float("nan")]})
@@ -124,10 +124,19 @@ def test_dataframes_keep_plain_dates_and_null_missing_values():
 
 
 def test_manifest_reports_import_errors(tmp_path):
-    from shipfn.manifest import build_manifest
+    from callables.manifest import build_manifest
 
-    (tmp_path / "broken.py").write_text("from shipfn import deploy\nimport not_a_real_module_xyz\n")
+    (tmp_path / "broken.py").write_text("from callables import deploy\nimport not_a_real_module_xyz\n")
     manifest = build_manifest(tmp_path)
     assert manifest["errors"][0]["module"] == "broken"
     assert "not_a_real_module_xyz" in manifest["errors"][0]["error"]
 
+
+def test_shipfn_is_the_old_name_for_callables():
+    import shipfn
+    import shipfn.files
+
+    import callables
+    import callables.files
+
+    assert shipfn.deploy is callables.deploy and shipfn.files is callables.files and shipfn.__version__ == callables.__version__

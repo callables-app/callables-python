@@ -3,11 +3,11 @@ from typing import Annotated
 
 import pytest
 
-from shipfn import File, accept, deploy, registry, save_file
-from shipfn import files as files_mod
-from shipfn.cli import main
-from shipfn.runtime import RESULT_MARKER, run
-from shipfn.schema import input_schema, output_kind
+from callables import File, accept, deploy, registry, save_file
+from callables import files as files_mod
+from callables.cli import main
+from callables.runtime import RESULT_MARKER, run
+from callables.schema import input_schema, output_kind
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def test_runtime_hands_uploads_in_and_files_out(tmp_path, capsys, monkeypatch):
     upload.parent.mkdir()
     upload.write_text("a,b\n1,2\n")
     (tmp_path / "fx_double.py").write_text(
-        "from shipfn import deploy, File, save_file\n"
+        "from callables import deploy, File, save_file\n"
         "@deploy\n"
         "def double(sheet: File) -> File:\n"
         "    save_file(b'side output', name='notes.txt')\n"
@@ -62,7 +62,7 @@ def test_runtime_hands_uploads_in_and_files_out(tmp_path, capsys, monkeypatch):
 
 
 def test_missing_upload_is_a_validation_error(tmp_path, capsys, monkeypatch):
-    (tmp_path / "fx_missing.py").write_text("from shipfn import deploy, File\n@deploy\ndef f(sheet: File) -> str:\n    return 'x'\n")
+    (tmp_path / "fx_missing.py").write_text("from callables import deploy, File\n@deploy\ndef f(sheet: File) -> str:\n    return 'x'\n")
     monkeypatch.setenv("SHIPFN_INPUTS", json.dumps({"sheet": {"path": str(tmp_path / "nope.csv")}}))
     assert run("fx_missing:f", tmp_path) == 1
     payload = json.loads(capsys.readouterr().out.splitlines()[-1].removeprefix(RESULT_MARKER))
@@ -79,7 +79,7 @@ def test_save_file_names_are_made_safe():
 def test_local_cli_takes_and_reports_files(tmp_path, capsys):
     (tmp_path / "data.csv").write_text("x\n")
     (tmp_path / "fx_echo.py").write_text(
-        "from shipfn import deploy, File\n@deploy\ndef echo(sheet: File) -> File:\n    return sheet\n")
+        "from callables import deploy, File\n@deploy\ndef echo(sheet: File) -> File:\n    return sheet\n")
     assert main(["local", "echo", "--root", str(tmp_path), "-i", f"sheet=@{tmp_path / 'data.csv'}"]) == 0
     err = capsys.readouterr().err
     assert "Files:" in err and "data.csv" in err

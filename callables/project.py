@@ -3,7 +3,8 @@ and then only that folder is built: its requirements.txt / pyproject.toml, apt.t
 import tomllib
 from pathlib import Path, PurePosixPath
 
-CONFIG_FILE = "shipfn.toml"
+CONFIG_FILES = ("callables.toml", "shipfn.toml")  # shipfn.toml is the old name, still read
+TOOL_KEYS = ("callables", "shipfn")
 
 
 class ConfigError(ValueError):
@@ -11,23 +12,25 @@ class ConfigError(ValueError):
 
 
 def _configured_root(repo: Path) -> tuple[object, str] | None:
-    config = repo / CONFIG_FILE
-    if config.is_file():
-        try:
-            data = tomllib.loads(config.read_text())
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"{CONFIG_FILE} isn't valid TOML: {exc}")
-        if "root" in data:
-            return data["root"], CONFIG_FILE
+    for name in CONFIG_FILES:
+        config = repo / name
+        if config.is_file():
+            try:
+                data = tomllib.loads(config.read_text())
+            except tomllib.TOMLDecodeError as exc:
+                raise ConfigError(f"{name} isn't valid TOML: {exc}")
+            if "root" in data:
+                return data["root"], name
     pyproject = repo / "pyproject.toml"
     if pyproject.is_file():
         try:
             data = tomllib.loads(pyproject.read_text())
         except tomllib.TOMLDecodeError:
             return None  # the build reports a broken pyproject.toml when it gets there
-        shipfn = data.get("tool", {}).get("shipfn", {})
-        if "root" in shipfn:
-            return shipfn["root"], "pyproject.toml [tool.shipfn]"
+        for key in TOOL_KEYS:
+            tool = data.get("tool", {}).get(key, {})
+            if "root" in tool:
+                return tool["root"], f"pyproject.toml [tool.{key}]"
     return None
 
 

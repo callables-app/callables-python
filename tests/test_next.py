@@ -2,10 +2,10 @@ import textwrap
 
 import pytest
 
-from shipfn import registry
-from shipfn.checks import check_project
-from shipfn.cli import main
-from shipfn.manifest import build_manifest
+from callables import registry
+from callables.checks import check_project
+from callables.cli import main
+from callables.manifest import build_manifest
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +18,7 @@ def isolated():
 USERS = '''
 from typing import Literal
 
-from shipfn import Group, Next
+from callables import Group, Next
 
 users = Group("users", title="Users")
 DB = {42: {"name": "Ann Lee", "admin": False, "sub": "Not required"},
@@ -67,7 +67,7 @@ def test_next_actions_resolve_into_the_manifest(project):
 def test_bad_next_actions_fail_the_manifest(tmp_path, bad, message):
     name = "bad_next_unknown" if "nope" in bad else "bad_next_input"
     (tmp_path / f"{name}.py").write_text(textwrap.dedent(f'''
-        from shipfn import Next, deploy
+        from callables import Next, deploy
 
         @deploy
         def make_admin(user_id: int) -> str: ...
@@ -81,7 +81,7 @@ def test_bad_next_actions_fail_the_manifest(tmp_path, bad, message):
 
 def test_check_warns_when_the_result_has_no_rows(tmp_path, monkeypatch):
     (tmp_path / "next_markdown.py").write_text(textwrap.dedent('''
-        from shipfn import deploy
+        from callables import deploy
 
         @deploy
         def make_admin(user_id: int) -> str: ...

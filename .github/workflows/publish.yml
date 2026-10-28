@@ -14,9 +14,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Tag must match shipfn.__version__
+      - name: Tag must match callables.__version__
         run: |
-          version=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('shipfn/__init__.py').read())[1])")
+          version=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('callables/__init__.py').read())[1])")
           test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME doesn't match version $version"; exit 1; }
       - run: pip install -e ".[dev]" build
       - run: pytest -q

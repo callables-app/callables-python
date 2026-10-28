@@ -1,22 +1,22 @@
-# Writing Shipfn automations
+# Writing Callables automations
 
-Shipfn turns Python functions into web forms that non-technical teammates run. A developer decorates a function with `@deploy` and pushes the repo. The platform builds it and shows each function as a form, generated from the type hints, with run history. People can also schedule runs from the web app.
+Callables turns Python functions into web forms that non-technical teammates run. A developer decorates a function with `@deploy` and pushes the repo. The platform builds it and shows each function as a form, generated from the type hints, with run history. People can also schedule runs from the web app.
 
 The person running an automation can't see the code, a traceback or a terminal. Everything they see comes from the decorator, the docstring, the parameter names and types, and the return value. Write for them.
 
 ## The loop
 
 1. Write or change a function decorated with `@deploy`.
-2. `shipfn check` (or `shipfn check --json`) lists every problem a deploy would hit, with a fix for each. Exit code 1 means the deploy would fail.
-3. `shipfn local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform.
+2. `call check` (or `call check --json`) lists every problem a deploy would hit, with a fix for each. Exit code 1 means the deploy would fail.
+3. `call local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform.
 4. Push. The platform builds and deploys on push.
 
-Run `shipfn check` before every push. If any module fails to import, nothing is published.
+Run `call check` before every push. If any module fails to import, nothing is published.
 
 ### First-time setup
 
-1. Install the CLI into the project's virtualenv: `pip install "shipfn @ git+https://github.com/<owner>/shipfn-sdk"`. Keep it out of `requirements.txt`, because the platform adds its own copy.
-2. The project must be a GitHub repo. Shipfn deploys a repo and branch, not a local folder. Commit and push it first, with `.env`, key files and data kept out by `.gitignore`.
+1. Install the CLI into the project's virtualenv: `pip install callables`. Keep it out of `requirements.txt`, because the platform adds its own copy.
+2. The project must be a GitHub repo. Callables deploys a repo and branch, not a local folder. Commit and push it first, with `.env`, key files and data kept out by `.gitignore`.
 3. In the web app, open **New project**. Pick the repo and branch (install the GitHub App when asked), then **Connect and deploy**. The first deploy starts right away.
 4. Set the secrets your functions declare on the project page. After that, every push to the branch deploys.
 
@@ -26,7 +26,7 @@ Run `shipfn check` before every push. If any module fails to import, nothing is 
 from datetime import date
 from typing import Literal
 
-from shipfn import deploy
+from callables import deploy
 
 
 @deploy(title="Closed deals", secrets=["CRM_TOKEN"], timeout=120)
@@ -48,12 +48,12 @@ def closed_deals(region: Literal["NA", "EMEA", "APAC"] = "NA", since: date | Non
 
 ## Groups: organise related functions
 
-A project (one repo) can hold many functions. Put related ones in a `Group`, like a Typer sub-app. People see them as one section of the project in the web app, and you run them as `shipfn <group> <action>`.
+A project (one repo) can hold many functions. Put related ones in a `Group`, like a Typer sub-app. People see them as one section of the project in the web app, and you run them as `call <group> <action>`.
 
 ```python
 from typing import Literal
 
-from shipfn import Group
+from callables import Group
 
 backups = Group("backups", title="Database backups", description="Postgres dumps to object storage",
                 secrets=["SPACES_KEY", "SPACES_SECRET"])   # given to every action in the group
@@ -70,22 +70,22 @@ def list_all(days: int = 30) -> list[dict]:
 ```
 
 ```bash
-shipfn backups --help                  # the group's actions
-shipfn backups run --help              # flags, from the type hints
-shipfn backups run --env staging --keep 3
+call backups --help       # the group's actions
+call backups run --help   # flags, from the type hints
+call backups run --env staging --keep 3
 ```
 
 - A group name is lowercase letters, digits, `-` or `_`, and can't be a built-in command (`check`, `local`, ...). Define each group once and import it wherever you need it.
-- An action's full name is `<group>.<name>`, e.g. `backups.run`. Use that with `shipfn local`.
+- An action's full name is `<group>.<name>`, e.g. `backups.run`. Use that with `call local`.
 - A function's name is its identity on the platform. Moving an existing function into a group gives it a new name, so it starts with fresh run history and sharing settings.
-- A plain `@deploy` still works. Those functions appear in the project without a section, and run as `shipfn <name> --flags`.
+- A plain `@deploy` still works. Those functions appear in the project without a section, and run as `call <name> --flags`.
 
 ### Local commands
 
 Some tools only make sense on your own machine: they read local files, write reports to disk or open a browser. Write them with `@command` (or `@group.command`) instead of `@deploy`, so the project has one CLI and no separate Typer app:
 
 ```python
-from shipfn import Group
+from callables import Group
 
 audits = Group("audits", title="Audits")
 
@@ -95,7 +95,7 @@ def render(slug: str, open_browser: bool = False) -> str:
     ...
 ```
 
-- They run as `shipfn audits render --slug x` and with `shipfn local`, with flags from the type hints, like any action. `shipfn check` lists them as "(local only)".
+- They run as `call audits render --slug x` and with `call local`, with flags from the type hints, like any action. `call check` lists them as "(local only)".
 - They're never deployed: the platform doesn't see them and nobody can run them from the web app. `@command` takes `name`, `title`, `description` and `next`, but no `secrets`, `schedule` or `timeout`, because it runs in your own environment (read secrets from `.env`). A deployed action's `next=` can't point at one.
 - Their module is still imported when the platform builds, so keep imports that only work locally inside the function.
 - Return the result instead of printing it. The CLI prints what you return (a table as aligned columns in a terminal, JSON when piped), so printing it as well shows it twice. Keep prints for progress.
@@ -108,7 +108,7 @@ Chain actions into step-by-step flows with `next=`. Each row of a table result (
 ```python
 from typing import Literal
 
-from shipfn import Group, Next
+from callables import Group, Next
 
 users = Group("users", title="Users")
 
@@ -129,7 +129,7 @@ def search(query: str) -> list[dict]:
 - An action's inputs are filled from result fields with the same name. `Next(action, user_id="id")` maps a field with a different name, and `label=` changes the button text.
 - `next` takes deployed functions, or names (`"make_admin"`, or `"users.make_admin"` for another group's action) when the action is defined further down.
 - In the web app, each result row gets a button per next action. It opens that action's form with the row's values filled in, and the new run links back to the one it came from.
-- In a terminal, `shipfn users search --query ann` lists the rows, asks which one and what to do next, prompts for the inputs the row didn't fill, and runs it. Press Enter to stop. Scripts and `--json` get plain output with no prompts.
+- In a terminal, `call users search --query ann` lists the rows, asks which one and what to do next, prompts for the inputs the row didn't fill, and runs it. Press Enter to stop. Scripts and `--json` get plain output with no prompts.
 - People only see next actions they're allowed to run.
 
 ## Inputs: type hints become the form
@@ -149,7 +149,7 @@ def search(query: str) -> list[dict]:
 - A default value makes the field optional and prefills it. A parameter without a default is required.
 - Parameter names become labels: `min_value` shows as "Min value". Choose names that read well.
 - Prefer `Literal[...]` over free text whenever the valid values are known.
-- Not supported: `*args`, `**kwargs`, `Callable` or arbitrary classes. `shipfn check` names the offending parameter.
+- Not supported: `*args`, `**kwargs`, `Callable` or arbitrary classes. `call check` names the offending parameter.
 - Avoid `dict` inputs. They show as a raw JSON box, so use a Pydantic model instead.
 - Inputs are validated and coerced before your function runs. A `date` arrives as a `datetime.date`, and a model arrives as an instance.
 
@@ -171,7 +171,7 @@ Always annotate the return type. Keep table rows flat (scalar values) and use re
 ```python
 from typing import Annotated
 
-from shipfn import File, accept, deploy, save_file
+from callables import File, accept, deploy, save_file
 
 
 @deploy(title="Clean up a contact list")
@@ -186,7 +186,7 @@ def clean_contacts(sheet: Annotated[File, accept(".csv")]) -> File:
 
 - A `File` parameter is an upload field. Use `accept(...)` to limit the file types.
 - Returning `File` gives the person a download. `save_file(path_or_bytes, name=...)` adds more downloads alongside any return value. It needs `name=` when you pass bytes.
-- Locally, pass a file with `-i sheet=@path/to/file.csv`. Outputs land in `./shipfn-output/`.
+- Locally, pass a file with `-i sheet=@path/to/file.csv`. Outputs land in `./callables-output/`.
 - Limits: 100 MB per upload, and 100 MB and 20 files of output per run. Files are deleted after 24 hours.
 - Functions with file inputs can't be scheduled.
 
@@ -194,11 +194,11 @@ def clean_contacts(sheet: Annotated[File, accept(".csv")]) -> File:
 
 - Each run gets a fresh sandbox on Debian 13 (trixie). It runs as a non-root user and has internet access.
 - **Python version:** taken from `.python-version` (e.g. `3.13`), else the newest version your `pyproject.toml` `requires-python` allows, else 3.12. Supported: 3.10 to 3.14.
-- **Python dependencies** come from `requirements.txt` at the repo root, or from `[project].dependencies` in `pyproject.toml`. **Don't list `shipfn`.** The platform installs its own matching copy.
-- **Automations in a subfolder:** by default the whole repo is built. To build only one folder, add `shipfn.toml` at the repo root containing `root = "automations"` (or `[tool.shipfn] root = "automations"` in `pyproject.toml`). Then only that folder goes into the image, and its own `requirements.txt`, `apt.txt` and `.python-version` are used. Code in it can't import from the rest of the repo. `shipfn check`, `local` and `manifest` use the same folder when run from the repo root.
+- **Python dependencies** come from `requirements.txt` at the repo root, or from `[project].dependencies` in `pyproject.toml`. **Don't list `callables`.** The platform installs its own matching copy.
+- **Automations in a subfolder:** by default the whole repo is built. To build only one folder, add `callables.toml` at the repo root containing `root = "automations"` (or `[tool.callables] root = "automations"` in `pyproject.toml`). Then only that folder goes into the image, and its own `requirements.txt`, `apt.txt` and `.python-version` are used. Code in it can't import from the rest of the repo. `call check`, `local` and `manifest` use the same folder when run from the repo root.
 - **Writable space:** your home directory (`~`), and `/tmp`, which is limited to 256 MB. Your code in `/app` is read-only. Every run starts fresh, so nothing persists between runs. Keep state in your own database or storage.
 - **Running downloaded binaries:** `/tmp` doesn't allow running programs, so a binary downloaded there fails with `Permission denied`. Put it under `~` and `chmod +x` it. Better still, install the tool with `apt.txt` (below).
-- Every module that imports `shipfn` and mentions `deploy` is imported at build time. Keep import-time code cheap and free of side effects: no network calls, and no reading secrets at module level. Read secrets inside the function.
+- Every module that imports `callables` and mentions `deploy` is imported at build time. Keep import-time code cheap and free of side effects: no network calls, and no reading secrets at module level. Read secrets inside the function.
 - `print()` output and `logging` show as the run's logs. Tracebacks are shown only to builders, never to the person running the automation.
 
 ## System packages
@@ -214,7 +214,7 @@ poppler-utils
 - Names only, no versions. You get the version Debian 13 (trixie) ships, which stays the same apart from security fixes. If the tool talks to an outside service, check that this version works with it.
 - Packages are installed without their "recommended" extras. If a tool is missing something (fonts, for example), list that package too.
 - They're installed once per change to `apt.txt`, not on every push.
-- `shipfn local` uses the tools on your own machine, so install them there too to test.
+- `call local` uses the tools on your own machine, so install them there too to test.
 
 ## Memory and CPU
 
@@ -228,9 +228,9 @@ Raise exceptions with messages written for the person running the automation. Th
 
 ## Commands
 
-- `shipfn check [--json]`: problems a deploy would hit, with fixes. Exit code 1 on errors.
-- `shipfn <group> <action> [--flags]` (or `shipfn <function> [--flags]`): run a function like a CLI command. Each input is a flag (`days` becomes `--days`, a bool becomes `--dry-run/--no-dry-run`, a list takes several values). Add `--help` to see them.
-- `shipfn local <name> [-i key=value ...] [--json]`: run a function on this machine. Values are parsed as JSON when possible, and `@path` passes a file. `--json` prints one JSON object on stdout (`ok`, `value`, `files`, `error`, `field_errors`), and the function's own prints go to stderr.
-- `shipfn manifest`: the full JSON the platform reads, including each input's JSON Schema. Local `@command`s are left out.
-- `shipfn docs`: prints this guide.
-- `shipfn init`: an example automation plus agent instructions (`.claude/skills/shipfn/SKILL.md` and an `AGENTS.md` section). Run it again after upgrading the SDK to refresh the instructions.
+- `call check [--json]`: problems a deploy would hit, with fixes. Exit code 1 on errors.
+- `call <group> <action> [--flags]` (or `call <function> [--flags]`): run a function like a CLI command. Each input is a flag (`days` becomes `--days`, a bool becomes `--dry-run/--no-dry-run`, a list takes several values). Add `--help` to see them.
+- `call local <name> [-i key=value ...] [--json]`: run a function on this machine. Values are parsed as JSON when possible, and `@path` passes a file. `--json` prints one JSON object on stdout (`ok`, `value`, `files`, `error`, `field_errors`), and the function's own prints go to stderr.
+- `call manifest`: the full JSON the platform reads, including each input's JSON Schema. Local `@command`s are left out.
+- `call docs`: prints this guide.
+- `call init`: an example automation plus agent instructions (`.claude/skills/callables/SKILL.md` and an `AGENTS.md` section). Run it again after upgrading the SDK to refresh the instructions.

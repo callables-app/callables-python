@@ -1,4 +1,4 @@
-"""`shipfn <group> <action> --flag value`: run a deployed function like a Typer command.
+"""`call <group> <action> --flag value`: run a deployed function like a Typer command.
 
 The flags come from the same JSON Schema the web form is built from, and the values go through the same
 validation as a run on the platform, so the terminal and the form can't disagree.
@@ -7,7 +7,7 @@ import argparse
 import json
 from typing import Any
 
-from shipfn.files import FILE_FORMAT
+from callables.files import FILE_FORMAT
 
 
 def _resolve(prop: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +93,7 @@ def _local(fn: dict[str, Any]) -> str:
 
 
 def command_tree(functions: list[dict[str, Any]]) -> str:
-    """What `shipfn <group> <action>` can run, for help and "not found" messages."""
+    """What `call <group> <action>` can run, for help and "not found" messages."""
     lines, grouped = [], {}
     for fn in functions:
         if fn.get("group"):
@@ -112,10 +112,10 @@ def find(functions: list[dict[str, Any]], argv: list[str]) -> tuple[dict[str, An
     in_group = [fn for fn in functions if fn.get("group") and fn["group"]["name"] == head]
     if in_group:
         if not rest or rest[0].startswith("-"):
-            return None, rest, f"shipfn {head}"
+            return None, rest, f"call {head}"
         match = next((fn for fn in in_group if fn["action"] == rest[0]), None)
         if match is None:
-            return None, rest, f"shipfn {head}"
-        return match, rest[1:], f"shipfn {head} {rest[0]}"
+            return None, rest, f"call {head}"
+        return match, rest[1:], f"call {head} {rest[0]}"
     match = next((fn for fn in functions if not fn.get("group") and fn["name"] == head), None)
-    return match, rest, f"shipfn {head}"
+    return match, rest, f"call {head}"

@@ -4,16 +4,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from shipfn.schema import input_model, input_schema, output_kind
+from callables.schema import input_model, input_schema, output_kind
 
 
 GROUP_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
-# Commands the CLI already has; a group can't share a name with them (`shipfn <group> <action>`)
+# Commands the CLI already has; a group can't share a name with them (`call <group> <action>`)
 RESERVED_GROUP_NAMES = {"check", "local", "manifest", "docs", "init", "run", "help"}
 
 
 class Group:
-    """A set of related actions, like a Typer sub-app: `shipfn <group> <action>` locally, and one section of the
+    """A set of related actions, like a Typer sub-app: `call <group> <action>` locally, and one section of the
     project in the web app. Secrets listed here are given to every action in the group.
 
         backups = Group("backups", title="Database backups", secrets=["SPACES_KEY"])
@@ -26,9 +26,9 @@ class Group:
                  secrets: list[str] | None = None):
         if not GROUP_NAME.match(name):
             raise ValueError(f"Group name '{name}' must be lowercase letters, digits, '-' or '_', starting with a "
-                             "letter (it's typed as `shipfn <group> <action>`)")
+                             "letter (it's typed as `call <group> <action>`)")
         if name in RESERVED_GROUP_NAMES:
-            raise ValueError(f"'{name}' is a shipfn command, so it can't be a group name")
+            raise ValueError(f"'{name}' is a built-in command, so it can't be a group name")
         self.name = name
         self.title = title or name.replace("_", " ").replace("-", " ").capitalize()
         self.description = description
@@ -39,7 +39,7 @@ class Group:
         return deploy(func, _group=self, **options)
 
     def command(self, func: Callable[..., Any] | None = None, **options: Any):
-        """`@command` for a local-only action in this group: `shipfn <group> <action>`, never deployed."""
+        """`@command` for a local-only action in this group: `call <group> <action>`, never deployed."""
         return command(func, _group=self, **options)
 
     def manifest_entry(self) -> dict[str, Any]:
@@ -131,7 +131,7 @@ class DeployedFunction:
         return self.func(**kwargs)
 
 
-# Every @deploy in an imported module lands here; `shipfn manifest` reads it.
+# Every @deploy in an imported module lands here; `call manifest` reads it.
 registry: dict[str, DeployedFunction] = {}
 
 
@@ -148,7 +148,7 @@ def deploy(
     _group: Group | None = None,
     _local_only: bool = False,
 ):
-    """Deploy a function to Shipfn: teammates run it from a web form generated from its type hints.
+    """Deploy a function to Callables: teammates run it from a web form generated from its type hints.
 
     Works bare (`@deploy`) or with options (`@deploy(title="Weekly report", secrets=["CRM_TOKEN"])`).
 
@@ -174,7 +174,7 @@ def deploy(
     To organise related functions, deploy them through a `Group` instead: `@backups.deploy(...)`.
     For a tool that only runs on your machine, use `@command` instead.
 
-    Run `shipfn docs` for the full guide and `shipfn check` before pushing.
+    Run `call docs` for the full guide and `call check` before pushing.
     """
 
     def wrap(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -221,7 +221,7 @@ def command(
     next: list[Next | Callable[..., Any] | str] | None = None,  # noqa: A002
     _group: Group | None = None,
 ):
-    """A command for your own machine: `shipfn <group> <action> --flags` (or `shipfn <name>`), built from the type
+    """A command for your own machine: `call <group> <action> --flags` (or `call <name>`), built from the type
     hints like a deployed action, but never deployed. For tools that read local files, write reports to disk or open
     a browser, so one project needs one CLI and no separate Typer app.
 

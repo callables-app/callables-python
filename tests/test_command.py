@@ -2,10 +2,10 @@ import textwrap
 
 import pytest
 
-from shipfn import registry
-from shipfn.checks import check_project
-from shipfn.cli import main
-from shipfn.manifest import build_manifest
+from callables import registry
+from callables.checks import check_project
+from callables.cli import main
+from callables.manifest import build_manifest
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +16,7 @@ def isolated():
 
 
 PROJECT = '''
-from shipfn import Group
+from callables import Group
 
 audits = Group("audits", title="Audits")
 
@@ -63,7 +63,7 @@ def test_check_lists_them_without_card_warnings(project):
 
 
 def test_a_module_with_only_commands_is_found(tmp_path, monkeypatch, capsys):
-    (tmp_path / "cmd_only.py").write_text("from shipfn import command\n@command\ndef hi(name: str) -> str:\n"
+    (tmp_path / "cmd_only.py").write_text("from callables import command\n@command\ndef hi(name: str) -> str:\n"
                                           "    return f'hi {name}'\n")
     monkeypatch.chdir(tmp_path)
     assert main(["hi", "--name", "Ann"]) == 0
@@ -73,14 +73,14 @@ def test_a_module_with_only_commands_is_found(tmp_path, monkeypatch, capsys):
 
 
 def test_deployed_actions_cant_offer_a_command_next(tmp_path):
-    (tmp_path / "cmd_next.py").write_text("from shipfn import command, deploy\n@command\ndef a() -> None: ...\n"
+    (tmp_path / "cmd_next.py").write_text("from callables import command, deploy\n@command\ndef a() -> None: ...\n"
                                           "@deploy(next=[a])\ndef b() -> dict: ...\n")
     report = check_project(tmp_path)
     assert not report["ok"] and any("local @command" in i["message"] for i in report["issues"])
 
 
 def test_command_takes_no_platform_options():
-    from shipfn import command
+    from callables import command
 
     with pytest.raises(TypeError):
         command(schedule="0 9 * * MON")

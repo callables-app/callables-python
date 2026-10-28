@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "shipfn"
+name = "callables"
 dynamic = ["version"]
-description = "Decorate Python functions and push them to Shipfn: forms, schedules and run history for your team."
+description = "Decorate Python functions and push them to Callables: forms, schedules and run history for your team."
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -18,17 +18,23 @@ dependencies = ["pydantic>=2.5"]
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
+[project.urls]
+Homepage = "https://callables.app"
+Source = "https://github.com/callables-app/callables-python"
+
 [project.scripts]
-shipfn = "shipfn.cli:main"
+call = "callables.cli:main"
+callables = "callables.cli:main"
+shipfn = "callables.cli:main"  # the old name, kept for existing scripts
 
 [tool.setuptools.packages.find]
-include = ["shipfn*"]
+include = ["callables*", "shipfn*"]
 
 [tool.setuptools.package-data]
-shipfn = ["py.typed", "GUIDE.md"]
+callables = ["py.typed", "GUIDE.md"]
 
 [tool.setuptools.dynamic]
-version = { attr = "shipfn.__version__" }
+version = { attr = "callables.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

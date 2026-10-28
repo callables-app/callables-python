@@ -1,6 +1,10 @@
-"""Shipfn SDK: mark functions with @deploy and push the repo; the platform does the rest."""
-from shipfn.decorator import DeployedFunction, Group, Next, command, deploy, registry
-from shipfn.files import File, accept, save_file
+"""The old name of the callables package. `from shipfn import deploy` and `import shipfn.files` keep working, so
+repos written before the rename still deploy. New code imports callables."""
+import importlib
+import sys
 
-__version__ = "0.1.0"
-__all__ = ["deploy", "command", "Group", "Next", "DeployedFunction", "registry", "File", "accept", "save_file", "__version__"]
+from callables import *  # noqa: F401,F403
+from callables import __all__, __version__  # noqa: F401
+
+for _name in ("checks", "cli", "commands", "decorator", "files", "init", "manifest", "project", "runtime", "schema"):
+    sys.modules[f"{__name__}.{_name}"] = globals()[_name] = importlib.import_module(f"callables.{_name}")

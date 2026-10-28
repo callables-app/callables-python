@@ -10,7 +10,7 @@ from pydantic import Field, GetCoreSchemaHandler, GetJsonSchemaHandler
 from pydantic_core import core_schema
 
 OUTPUT_DIR_ENV = "SHIPFN_OUTPUT_DIR"
-LOCAL_OUTPUT_DIR = "shipfn-output"  # where `shipfn local` puts files
+LOCAL_OUTPUT_DIR = "callables-output"  # where `call local` puts files
 FILE_FORMAT = "shipfn-file"
 
 _saved: list["File"] = []
@@ -87,7 +87,7 @@ def safe_name(name: str) -> str:
 
 
 def output_dir() -> Path:
-    """Where this run's downloads are kept: a platform folder when deployed, ./shipfn-output locally."""
+    """Where this run's downloads are kept: a platform folder when deployed, ./callables-output locally."""
     path = Path(os.environ.get(OUTPUT_DIR_ENV) or LOCAL_OUTPUT_DIR)
     path.mkdir(parents=True, exist_ok=True)
     return path

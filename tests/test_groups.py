@@ -3,9 +3,9 @@ import textwrap
 
 import pytest
 
-from shipfn import Group, registry
-from shipfn.cli import main
-from shipfn.manifest import build_manifest
+from callables import Group, registry
+from callables.cli import main
+from callables.manifest import build_manifest
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ from datetime import date
 from enum import Enum
 from typing import Literal
 
-from shipfn import Group, deploy
+from callables import Group, deploy
 
 backups = Group("backups", title="Database backups", description="Dumps to Spaces",
                 secrets=["SPACES_KEY", "SPACES_SECRET"])
@@ -78,7 +78,7 @@ def test_group_names_must_work_as_commands(bad):
 
 def test_a_group_defined_twice_differently_fails_the_manifest(tmp_path):
     (tmp_path / "grp_twice.py").write_text(textwrap.dedent('''
-        from shipfn import Group
+        from callables import Group
         a, b = Group("ops", title="Ops"), Group("ops", title="Operations")
 
         @a.deploy

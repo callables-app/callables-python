@@ -4,14 +4,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from shipfn.decorator import registry
+from callables.decorator import registry
 
 SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "tests", "test", ".shipfn_sdk", "build", "dist"}
 MANIFEST_VERSION = 1
 
 
 def discover_modules(root: Path) -> list[str]:
-    """Dotted names of every module under root that mentions shipfn, so they can be imported."""
+    """Dotted names of every module under root that mentions callables (or shipfn, its old name), so they can be imported."""
     modules = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
@@ -23,7 +23,7 @@ def discover_modules(root: Path) -> list[str]:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if "shipfn" not in text or ("deploy" not in text and "command" not in text):
+            if ("callables" not in text and "shipfn" not in text) or ("deploy" not in text and "command" not in text):
                 continue
             rel = path.relative_to(root).with_suffix("")
             parts = list(rel.parts)
@@ -35,8 +35,8 @@ def discover_modules(root: Path) -> list[str]:
 
 
 def build_manifest(root: Path, include_local: bool = False) -> dict[str, Any]:
-    """What the platform deploys. `include_local` adds the @command functions, for the CLI and `shipfn check`."""
-    from shipfn import __version__
+    """What the platform deploys. `include_local` adds the @command functions, for the CLI and `call check`."""
+    from callables import __version__
 
     root = root.resolve()
     if str(root) not in sys.path:
