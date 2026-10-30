@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from callables.decorator import registry
-from callables.files import FILE_FORMAT
 from callables.manifest import build_manifest
+from callables.schema import file_fields
 
 MAX_TIMEOUT = 900  # the platform caps timeouts here
 SECRET_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -23,13 +23,6 @@ def _issue(level: str, message: str, function: str | None = None, fix: str | Non
     if fix:
         issue["fix"] = fix
     return issue
-
-
-def _file_fields(schema: dict[str, Any]) -> list[str]:
-    return [
-        name for name, prop in (schema.get("properties") or {}).items()
-        if any(o.get("format") == FILE_FORMAT for o in [prop, *prop.get("anyOf", [])])
-    ]
 
 
 def _check_function(fn: dict[str, Any]) -> list[dict[str, Any]]:
@@ -61,10 +54,6 @@ def _check_function(fn: dict[str, Any]) -> list[dict[str, Any]]:
             issues.append(_issue("error", f"Secret name '{secret}' isn't a valid environment variable name", name,
                                  "Use letters, digits and underscores, e.g. SALES_API_TOKEN"))
 
-    if fn.get("next") and fn["output_kind"] not in ("table", "kv"):
-        issues.append(_issue("warning", "next actions are offered on table rows or a single record, so they won't "
-                             "show for this result", name, "Return list[dict] (rows) or a dict/model (one record)"))
-
     schedule = fn.get("schedule")
     if schedule:
         fields = schedule.split()
@@ -74,9 +63,24 @@ def _check_function(fn: dict[str, Any]) -> list[dict[str, Any]]:
         if schema.get("required"):
             issues.append(_issue("warning", "Scheduled functions need a default for every input; the schedule will "
                                  f"be ignored (no default: {', '.join(schema['required'])})", name))
-        if _file_fields(schema):
+        if file_fields(schema):
             issues.append(_issue("warning", "Functions with file inputs can't run on a schedule", name,
                                  "Drop the schedule, or read the file from storage instead of an upload"))
+    return issues
+
+
+def _check_next(fn: dict[str, Any], by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """A next action that needs a file this function doesn't hand it: people will have to pick the file themselves."""
+    issues = []
+    for option in fn.get("next") or []:
+        target = by_name.get(option["action"])
+        needs = [f for f in file_fields(target["input_schema"]) if f in target["input_schema"].get("required", [])] \
+            if target else []
+        if needs and not option.get("file_input"):
+            issues.append(_issue("warning", f"next: {option['action']} needs a file ({', '.join(needs)}), and this "
+                                 "function doesn't return one, so people will have to pick it themselves", fn["name"],
+                                 "Return the file (-> File) to pass it along, and print() any summary instead: it "
+                                 "shows in the run's logs"))
     return issues
 
 
@@ -93,8 +97,10 @@ def check_project(root: Path) -> dict[str, Any]:
     elif manifest["functions"] and all(f.get("local_only") for f in manifest["functions"]):
         issues.append(_issue("warning", "Every function is a local @command, so a deploy publishes nothing",
                              fix="Use @deploy for anything teammates should run"))
+    by_name = {f["name"]: f for f in manifest["functions"]}
     for fn in manifest["functions"]:
         issues.extend(_check_function(fn))
+        issues.extend(_check_next(fn, by_name))
     if not (Path(root) / "requirements.txt").is_file() and not (Path(root) / "pyproject.toml").is_file():
         issues.append(_issue("warning", "No requirements.txt, so only the standard library is installed",
                              fix="List your dependencies (not callables itself) in requirements.txt"))

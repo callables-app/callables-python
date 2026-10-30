@@ -27,6 +27,7 @@ Functions decorated with `@deploy` (from `callables`) are deployed on push and r
 - Read the guide before writing or changing one: `.claude/skills/callables/SKILL.md`, or run `call docs`.
 - Run `call check` before pushing (exit code 1 means the deploy would fail), and try functions with `call local <name> -i key=value`.
 - Don't add `callables` to requirements.txt. The platform installs its own copy.
+- Full docs: https://callables.app/docs (each page as Markdown at `/docs/<page>.md`; an index at https://callables.app/llms.txt).
 {SECTION_END}
 """
 

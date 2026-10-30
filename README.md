@@ -6,6 +6,8 @@ Turn Python functions into forms, schedules and run history your whole team can 
 pip install callables
 ```
 
+Docs: [callables.app/docs](https://callables.app/docs).
+
 This installs the `call` command. Code written for the SDK's old name, `shipfn`, keeps working: `from shipfn import deploy` and the `shipfn` command are aliases for this package.
 
 ```python

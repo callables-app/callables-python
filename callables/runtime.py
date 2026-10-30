@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
-from callables.files import File, save_file, saved_files
+from callables.files import File, keep_returned, saved_files
 
 RESULT_MARKER = "__SHIPFN_RESULT__"
 # Lines the platform shows only to the function's builders (end users never see stack traces)
@@ -73,5 +73,5 @@ def finish(result: Any) -> Any:
     if files is None:
         return to_jsonable(result)
     for f in files:
-        save_file(f)
+        keep_returned(f)
     return None

@@ -230,11 +230,12 @@ def _pick(prompt: str, count: int) -> int | None:
         print(f"Type a number from 1 to {count}.", file=sys.stderr)
 
 
-def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict]) -> int:
-    """The terminal side of `next`: pick a row, pick what to do with it, fill in what's left, run it."""
+def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict], files: list[dict]) -> int:
+    """The terminal side of `next`: pick a row (if the result has rows), pick what to do next, fill in what's left,
+    run it. A file the function returned goes to the next action's file input."""
     from callables.commands import _coerce, _resolve
 
-    row = rows[0] if len(rows) == 1 else None
+    row: dict | None = {} if not rows else rows[0] if len(rows) == 1 else None
     if row is None:
         index = _pick("Pick a row", len(rows))
         if index is None:
@@ -248,6 +249,9 @@ def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict]) -> in
     option = fn["next"][choice]
     target = next(f for f in functions if f["name"] == option["action"])
     inputs = {name: row[field] for name, field in option["inputs"].items() if field in row}
+    returned = next((f["local_path"] for f in files if f.get("returned")), None)
+    if option.get("file_input") and returned:
+        inputs[option["file_input"]] = returned
     schema = target["input_schema"]
     for name in schema.get("x-order", []):
         if name in inputs:
@@ -312,9 +316,9 @@ def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = Fa
     if as_json:
         return report({"ok": True, "value": result, "files": files})
     entry = next((f for f in manifest["functions"] if f["name"] == name), {})
-    rows = _rows(result)
+    rows = _rows(result) or []
     # `next` turns a result into a menu, but only for a person at a terminal; scripts get plain output
-    interactive = follow and entry.get("next") and rows and sys.stdin.isatty() and sys.stdout.isatty()
+    interactive = follow and entry.get("next") and sys.stdin.isatty() and sys.stdout.isatty()
     if interactive and len(rows) > 1:
         for i, row in enumerate(rows, 1):
             print(f"  {i}. " + "   ".join(f"{k}={v}" for k, v in list(row.items())[:5]))
@@ -327,7 +331,7 @@ def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = Fa
         for f in files:
             print(f"  {f['local_path']}  ({f['size']:,} bytes)", file=sys.stderr)
     if interactive:
-        return _follow(root, entry, manifest["functions"], rows)
+        return _follow(root, entry, manifest["functions"], rows, files)
     return 0
 
 

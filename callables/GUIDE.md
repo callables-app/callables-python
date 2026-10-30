@@ -2,6 +2,8 @@
 
 Callables turns Python functions into web forms that non-technical teammates run. A developer decorates a function with `@deploy` and pushes the repo. The platform builds it and shows each function as a form, generated from the type hints, with run history. People can also schedule runs from the web app.
 
+This guide matches the installed SDK version. The full docs, including setup, secrets, schedules, sharing and limits, are at https://callables.app/docs. Every page is also served as Markdown: add `.md` to its URL (for example https://callables.app/docs/inputs.md), or read https://callables.app/llms.txt for an index.
+
 The person running an automation can't see the code, a traceback or a terminal. Everything they see comes from the decorator, the docstring, the parameter names and types, and the return value. Write for them.
 
 ## The loop
@@ -103,7 +105,7 @@ def render(slug: str, open_browser: bool = False) -> str:
 
 ## Flows: what to do next with a result
 
-Chain actions into step-by-step flows with `next=`. Each row of a table result (or a single dict/model result) offers the next actions, with their inputs filled in from that row. Every step is still an ordinary action: it can be run on its own, scheduled or shared separately.
+Chain actions into step-by-step flows with `next=`. The next actions are offered with every result. On a table result, each row (or a single dict/model result) offers them with their inputs filled in from that row. When the function returns a file, the file is passed to the next action's file input. Every step is still an ordinary action: it can be run on its own, scheduled or shared separately.
 
 ```python
 from typing import Literal
@@ -128,9 +130,23 @@ def search(query: str) -> list[dict]:
 
 - An action's inputs are filled from result fields with the same name. `Next(action, user_id="id")` maps a field with a different name, and `label=` changes the button text.
 - `next` takes deployed functions, or names (`"make_admin"`, or `"users.make_admin"` for another group's action) when the action is defined further down.
-- In the web app, each result row gets a button per next action. It opens that action's form with the row's values filled in, and the new run links back to the one it came from.
-- In a terminal, `call users search --query ann` lists the rows, asks which one and what to do next, prompts for the inputs the row didn't fill, and runs it. Press Enter to stop. Scripts and `--json` get plain output with no prompts.
+- **Files:** when a function returns one file (`-> File`) and the next action takes a file, that file goes to the action's file input: its only one, or its only required one. Files saved with `save_file` aren't passed along. A row's values can't fill a file input, and `call check` warns when a next action needs a file that nothing hands it.
+
+  ```python
+  @deploy(title="2. Verify websites")
+  def verify_websites(sheet: Annotated[File, accept(".csv")], max_businesses: int = 200) -> File: ...
+
+
+  @deploy(title="1. Find prospects", next=[verify_websites])
+  def find_prospects(town: str) -> File:
+      ...
+      return File("/tmp/prospects.csv", name="prospects.csv")
+  ```
+
+- In the web app, each result row gets a button per next action. It opens that action's form with the row's values filled in, and the new run links back to the one it came from. Other results get one Next button per action under the result, and a passed-along file is already attached to the form.
+- In a terminal, `call users search --query ann` lists the rows (if the result has any), asks which one and what to do next, prompts for the inputs the row didn't fill, and runs it. Press Enter to stop. Scripts and `--json` get plain output with no prompts.
 - People only see next actions they're allowed to run.
+- If a result tells people to run another step ("Next: upload this to step 2"), use `next=` instead of writing it in the text. Text isn't clickable, and `next=` carries the file or row values along.
 
 ## Inputs: type hints become the form
 

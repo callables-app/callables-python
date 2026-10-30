@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from callables.schema import input_model, input_schema, output_kind
+from callables.schema import file_fields, input_model, input_schema, output_kind, returns_one_file
 
 
 GROUP_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
@@ -50,11 +50,15 @@ class Group:
 
 
 class Next:
-    """A follow-up action offered on each row (or the single record) of a function's result, with inputs filled in
-    from that row. Fields with the same name as the action's inputs are matched automatically; map others by name.
+    """A follow-up action offered with a function's result. On each row of a table (or the single record), its inputs
+    are filled in from that row: fields with the same name as the action's inputs match automatically; map others by
+    name. When the function returns a file (`-> File`) and the action takes one, the file is passed along.
 
         @users.deploy(title="Find user", next=[make_admin, Next(set_plan, label="Change plan", user_id="id")])
         def search(query: str) -> list[dict]: ...
+
+        @deploy(title="1. Find prospects", next=[verify_websites])   # verify_websites(sheet: File)
+        def find_prospects(town: str) -> File: ...
 
     `action` is a deployed function, or its name (`"make_admin"`, or `"users.make_admin"` from another group).
     """
@@ -78,8 +82,24 @@ class Next:
         unknown = [name for name in self.inputs if name not in params]
         if unknown:
             raise ValueError(f"next: {target.name} has no input named {', '.join(unknown)}")
-        return {"action": target.name, "label": self.label or target.title,
-                "inputs": {name: self.inputs.get(name, name) for name in params}}
+        # A row's values can't fill a file input; the file this function returns can
+        schema = input_schema(target.func)
+        files = file_fields(schema)
+        mapped = [name for name in self.inputs if name in files]
+        if mapped:
+            raise ValueError(f"next: {target.name}'s {', '.join(mapped)} takes a file, which a result field can't "
+                             "fill. Return the file (-> File) and it's passed along")
+        entry: dict[str, Any] = {"action": target.name, "label": self.label or target.title,
+                                 "inputs": {name: self.inputs.get(name, name) for name in params if name not in files}}
+        if files and returns_one_file(source.func):
+            # The only file input, or else the only required one (an optional extra file stays for people to add)
+            required = [name for name in files if name in schema.get("required", [])]
+            choice = files if len(files) == 1 else required
+            if len(choice) != 1:
+                raise ValueError(f"next: {target.name} takes several files ({', '.join(files)}), so it isn't clear "
+                                 "which one gets the file this function returns")
+            entry["file_input"] = choice[0]
+        return entry
 
 
 @dataclass
@@ -162,8 +182,9 @@ def deploy(
         schedule: Cron expression in UTC (e.g. "0 9 * * MON"). Every input needs a default.
             Usually unnecessary: anyone can schedule a function from the web app.
         timeout: Seconds before the run is stopped (default 300, platform maximum 900).
-        next: Actions people can take on a result row next, with inputs filled from the row: deployed functions,
-            their names, or `Next(...)` for a label or field mapping. Builds step-by-step flows.
+        next: Actions people can take next, offered with the result: deployed functions, their names, or
+            `Next(...)` for a label or field mapping. On table rows (or a single record) inputs are filled from the
+            row; a returned file (`-> File`) goes to the action's file input. Builds step-by-step flows.
 
     Inputs: str, int, float, bool, date, datetime, Literal[...]/Enum (dropdown), list[...], X | None,
     Pydantic models and File (upload). Defaults make a field optional.

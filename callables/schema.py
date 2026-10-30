@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, create_model
 
-from callables.files import File
+from callables.files import FILE_FORMAT, File
 
 SUPPORTED_TYPES = ("str, int, float, bool, date, datetime, Literal[...], an Enum, list[...] of those, "
                    "X | None, a Pydantic model, or File")
@@ -75,3 +75,16 @@ def output_kind(func: Callable[..., Any]) -> str:
 
 def _is_model(tp: Any) -> bool:
     return inspect.isclass(tp) and issubclass(tp, BaseModel)
+
+
+def file_fields(schema: dict[str, Any]) -> list[str]:
+    """The inputs that take an uploaded file (`File`, or `File | None`)."""
+    return [
+        name for name, prop in (schema.get("properties") or {}).items()
+        if any(o.get("format") == FILE_FORMAT for o in [prop, *prop.get("anyOf", [])])
+    ]
+
+
+def returns_one_file(func: Callable[..., Any]) -> bool:
+    """`-> File`: the result is a single file, which a next action can be handed."""
+    return typing.get_type_hints(func).get("return") is File

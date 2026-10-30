@@ -1,3 +1,4 @@
+import json
 import textwrap
 
 import pytest
@@ -79,19 +80,88 @@ def test_bad_next_actions_fail_the_manifest(tmp_path, bad, message):
     assert len(errors) == 1 and message in errors[0]["error"]
 
 
-def test_check_warns_when_the_result_has_no_rows(tmp_path, monkeypatch):
-    (tmp_path / "next_markdown.py").write_text(textwrap.dedent('''
-        from callables import deploy
+PIPELINE = '''
+from typing import Annotated
+
+from callables import File, accept, deploy, save_file
+
+Sheet = Annotated[File, accept(".csv")]
+
+
+@deploy(title="2. Verify")
+def verify(sheet: Sheet, extra: Sheet | None = None, limit: int = 10) -> str:
+    return f"verified {sheet.read_text().strip()}"
+
+
+@deploy(title="1. Find", next=[verify])
+def find(town: str) -> File:
+    save_file(b"evidence", name="evidence.csv")   # saved alongside: not the one passed on
+    with open("prospects.csv", "w") as f:
+        f.write(f"prospects in {town}")
+    return File("prospects.csv")
+'''
+
+
+@pytest.fixture
+def pipeline(tmp_path, monkeypatch, request):
+    module = f"pipe_{request.node.name.replace('[', '_').replace(']', '').replace('-', '_')}"
+    (tmp_path / f"{module}.py").write_text(textwrap.dedent(PIPELINE))
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_a_returned_file_goes_to_the_actions_one_required_file_input(pipeline):
+    find = next(f for f in build_manifest(pipeline)["functions"] if f["name"] == "find")
+    assert find["next"] == [{"action": "verify", "label": "2. Verify", "inputs": {"limit": "limit"}, "file_input": "sheet"}]
+    assert not any("needs a file" in i["message"] for i in check_project(pipeline)["issues"])
+
+
+def test_terminal_flow_hands_the_returned_file_on(pipeline, monkeypatch, capsys):
+    tty(monkeypatch, ["1", "", ""])  # choose "2. Verify", keep the defaults for extra and limit
+    assert main(["find", "--town", "Leeds"]) == 0
+    assert "verified prospects in Leeds" in capsys.readouterr().out
+
+
+def test_only_returned_files_are_marked(pipeline, capsys):
+    assert main(["local", "find", "-i", "town=York", "--json"]) == 0
+    files = json.loads(capsys.readouterr().out)["files"]
+    assert [(f["name"], f.get("returned", False)) for f in files] == [("evidence.csv", False), ("prospects.csv", True)]
+
+
+@pytest.mark.parametrize("returns, nxt, message", [
+    ("-> File", "[Next(verify, sheet='file')]", "takes a file, which a result field can't fill"),
+    ("-> File", "[both]", "takes several files (a, b)"),
+])
+def test_file_hand_off_mistakes_fail_the_manifest(tmp_path, returns, nxt, message):
+    (tmp_path / f"handoff_{len(message)}.py").write_text(textwrap.dedent(f'''
+        from callables import File, Next, deploy
 
         @deploy
-        def make_admin(user_id: int) -> str: ...
+        def verify(sheet: File) -> str: ...
 
-        @deploy(next=[make_admin])
-        def search(query: str) -> str:
-            """Finds people."""
+        @deploy
+        def both(a: File, b: File) -> str: ...
+
+        @deploy(next={nxt})
+        def find(town: str) {returns}: ...
+    '''))
+    errors = build_manifest(tmp_path)["errors"]
+    assert len(errors) == 1 and message in errors[0]["error"]
+
+
+def test_check_warns_when_an_action_needs_a_file_nothing_hands_it(tmp_path):
+    (tmp_path / "needs_file.py").write_text(textwrap.dedent('''
+        from callables import File, deploy
+
+        @deploy
+        def verify(sheet: File) -> str: ...
+
+        @deploy(next=[verify])
+        def find(town: str) -> str:
+            """Finds prospects."""
     '''))
     issues = check_project(tmp_path)["issues"]
-    assert any("table rows or a single record" in i["message"] for i in issues)
+    assert any("verify needs a file (sheet)" in i["message"] for i in issues)
 
 
 def tty(monkeypatch, answers):

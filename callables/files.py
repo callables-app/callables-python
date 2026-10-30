@@ -14,6 +14,7 @@ LOCAL_OUTPUT_DIR = "callables-output"  # where `call local` puts files
 FILE_FORMAT = "shipfn-file"
 
 _saved: list["File"] = []
+_returned: set[Path] = set()  # saved copies of files the function returned, not ones it saved alongside
 
 
 class File:
@@ -122,6 +123,13 @@ def save_file(source: str | os.PathLike | bytes | File, name: str | None = None,
     return saved
 
 
+def keep_returned(file: "File") -> "File":
+    """Save a file the function returned. The platform can hand it to a next action's file input."""
+    saved = save_file(file)
+    _returned.add(saved.path)
+    return saved
+
+
 def saved_files() -> list[dict[str, Any]]:
     """What this run produced, for the platform: paths are relative to the output directory."""
     if not _saved:
@@ -129,6 +137,6 @@ def saved_files() -> list[dict[str, Any]]:
     root = output_dir().resolve()
     return [
         {"name": f.name, "path": str(f.path.resolve().relative_to(root)), "size": f.size,
-         "content_type": f.content_type}
+         "content_type": f.content_type, **({"returned": True} if f.path in _returned else {})}
         for f in _saved if f.path.is_file()
     ]
