@@ -6,12 +6,12 @@ from typing import Any
 
 from callables.decorator import registry
 
-SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "tests", "test", ".shipfn_sdk", "build", "dist"}
+SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "tests", "test", ".callables_sdk", "build", "dist"}
 MANIFEST_VERSION = 1
 
 
 def discover_modules(root: Path) -> list[str]:
-    """Dotted names of every module under root that mentions callables (or shipfn, its old name), so they can be imported."""
+    """Dotted names of every module under root that mentions callables, so they can be imported."""
     modules = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
@@ -23,7 +23,7 @@ def discover_modules(root: Path) -> list[str]:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if ("callables" not in text and "shipfn" not in text) or ("deploy" not in text and "command" not in text):
+            if "callables" not in text or ("deploy" not in text and "command" not in text):
                 continue
             rel = path.relative_to(root).with_suffix("")
             parts = list(rel.parts)

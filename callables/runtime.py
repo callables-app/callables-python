@@ -11,9 +11,9 @@ from pydantic import BaseModel, TypeAdapter
 
 from callables.files import File, keep_returned, saved_files
 
-RESULT_MARKER = "__SHIPFN_RESULT__"
+RESULT_MARKER = "__CALLABLES_RESULT__"
 # Lines the platform shows only to the function's builders (end users never see stack traces)
-BUILDER_MARKER = "__SHIPFN_BUILDER__"
+BUILDER_MARKER = "__CALLABLES_BUILDER__"
 
 
 def to_jsonable(value: Any) -> Any:
@@ -36,7 +36,7 @@ def resolve(entrypoint: str):
     obj: Any = importlib.import_module(module_name)
     for attr in qualname.split("."):
         obj = getattr(obj, attr)
-    deployed = getattr(obj, "__shipfn__", None)
+    deployed = getattr(obj, "__callables__", None)
     if deployed is None:
         raise RuntimeError(f"{entrypoint} is not decorated with @deploy")
     return deployed
@@ -51,13 +51,13 @@ def emit(payload: dict[str, Any]) -> None:
 def run(entrypoint: str, root: Path) -> int:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    inputs = json.loads(os.environ.pop("SHIPFN_INPUTS", "{}") or "{}")
+    inputs = json.loads(os.environ.pop("CALLABLES_INPUTS", "{}") or "{}")
     try:
         result = finish(resolve(entrypoint).call(inputs))
     except Exception as exc:
         sys.stdout.flush()
         # On the platform, tag the traceback so only builders see it; locally, print it as-is
-        prefix = BUILDER_MARKER if os.environ.get("SHIPFN_RUN_ID") else ""
+        prefix = BUILDER_MARKER if os.environ.get("CALLABLES_RUN_ID") else ""
         for line in traceback.format_exc().rstrip().splitlines():
             print(prefix + line, file=sys.stderr, flush=True)
         emit({"ok": False, "error": f"{type(exc).__name__}: {exc}", "files": saved_files()})

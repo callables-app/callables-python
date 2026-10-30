@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     p_init.add_argument("--no-example", action="store_true", help="Only write the agent instructions")
     p_init.add_argument("--no-agents", action="store_true", help="Skip the agent instructions")
 
-    p_run = sub.add_parser("run", help="(Used by the platform) run one function with inputs from $SHIPFN_INPUTS")
+    p_run = sub.add_parser("run", help="(Used by the platform) run one function with inputs from $CALLABLES_INPUTS")
     p_run.add_argument("entrypoint", help="module:function")
     p_run.add_argument("--root", default=".")
 

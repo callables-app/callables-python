@@ -70,7 +70,7 @@ class Next:
 
     def resolve(self, source: "DeployedFunction") -> dict[str, Any]:
         """Needs the whole registry, so it runs when the manifest is built, not at decoration time."""
-        target = getattr(self.action, "__shipfn__", None)
+        target = getattr(self.action, "__callables__", None)
         if target is None:
             names = [self.action, f"{source.group.name}.{self.action}" if source.group else None]
             target = next((registry[n] for n in names if n in registry), None)
@@ -227,7 +227,7 @@ def deploy(
         def wrapper(*args, **kwargs):
             return f(*args, **kwargs)
 
-        wrapper.__shipfn__ = deployed
+        wrapper.__callables__ = deployed
         return wrapper
 
     return wrap(func) if func is not None else wrap

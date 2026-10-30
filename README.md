@@ -8,7 +8,7 @@ pip install callables
 
 Docs: [callables.app/docs](https://callables.app/docs).
 
-This installs the `call` command. Code written for the SDK's old name, `shipfn`, keeps working: `from shipfn import deploy` and the `shipfn` command are aliases for this package.
+This installs the `call` command.
 
 ```python
 from typing import Literal
@@ -70,7 +70,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 ```
 
-The platform (shipfn-api) depends on this package and copies the installed version into every build, so a release only reaches deployed functions once the API is updated to it. See [RELEASING.md](RELEASING.md).
+The platform (callables-api) depends on this package and copies the installed version into every build, so a release only reaches deployed functions once the API is updated to it. See [RELEASING.md](RELEASING.md).
 
 ## License
 

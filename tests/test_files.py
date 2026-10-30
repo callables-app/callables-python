@@ -14,7 +14,7 @@ from callables.schema import input_schema, output_kind
 def isolated(tmp_path, monkeypatch):
     registry.clear()
     files_mod._saved.clear()
-    monkeypatch.setenv("SHIPFN_OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("CALLABLES_OUTPUT_DIR", str(tmp_path / "out"))
     yield
     registry.clear()
     files_mod._saved.clear()
@@ -26,8 +26,8 @@ def test_file_parameters_become_upload_fields():
         ...
 
     props = input_schema(clean)["properties"]
-    assert props["sheet"] == {"type": "string", "format": "shipfn-file", "title": "Sheet", "x-accept": ".csv,.xlsx"}
-    assert {"type": "string", "format": "shipfn-file"} in props["notes"]["anyOf"]
+    assert props["sheet"] == {"type": "string", "format": "callables-file", "title": "Sheet", "x-accept": ".csv,.xlsx"}
+    assert {"type": "string", "format": "callables-file"} in props["notes"]["anyOf"]
     assert input_schema(clean)["required"] == ["sheet"]
     assert output_kind(clean) == "file"
 
@@ -50,7 +50,7 @@ def test_runtime_hands_uploads_in_and_files_out(tmp_path, capsys, monkeypatch):
         "    out.write_text(sheet.read_text() * 2)\n"
         "    return File(out, name=f'doubled-{sheet.name}')\n"
     )
-    monkeypatch.setenv("SHIPFN_INPUTS", json.dumps({"sheet": {"path": str(upload), "name": "Sales Q3.csv"}}))
+    monkeypatch.setenv("CALLABLES_INPUTS", json.dumps({"sheet": {"path": str(upload), "name": "Sales Q3.csv"}}))
     assert run("fx_double:double", tmp_path) == 0
     payload = json.loads(capsys.readouterr().out.splitlines()[-1].removeprefix(RESULT_MARKER))
     assert payload["ok"] and payload["value"] is None
@@ -63,7 +63,7 @@ def test_runtime_hands_uploads_in_and_files_out(tmp_path, capsys, monkeypatch):
 
 def test_missing_upload_is_a_validation_error(tmp_path, capsys, monkeypatch):
     (tmp_path / "fx_missing.py").write_text("from callables import deploy, File\n@deploy\ndef f(sheet: File) -> str:\n    return 'x'\n")
-    monkeypatch.setenv("SHIPFN_INPUTS", json.dumps({"sheet": {"path": str(tmp_path / "nope.csv")}}))
+    monkeypatch.setenv("CALLABLES_INPUTS", json.dumps({"sheet": {"path": str(tmp_path / "nope.csv")}}))
     assert run("fx_missing:f", tmp_path) == 1
     payload = json.loads(capsys.readouterr().out.splitlines()[-1].removeprefix(RESULT_MARKER))
     assert "File not found" in payload["error"]

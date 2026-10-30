@@ -3,8 +3,8 @@ and then only that folder is built: its requirements.txt / pyproject.toml, apt.t
 import tomllib
 from pathlib import Path, PurePosixPath
 
-CONFIG_FILES = ("callables.toml", "shipfn.toml")  # shipfn.toml is the old name, still read
-TOOL_KEYS = ("callables", "shipfn")
+CONFIG_FILES = ("callables.toml",)
+TOOL_KEYS = ("callables",)
 
 
 class ConfigError(ValueError):

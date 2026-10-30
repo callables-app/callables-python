@@ -10,7 +10,6 @@ from callables.manifest import discover_modules
 
 SECTION_START = "<!-- callables:start -->"
 SECTION_END = "<!-- callables:end -->"
-LEGACY_SECTIONS = [("<!-- shipfn:start -->", "<!-- shipfn:end -->")]  # replaced with the current section
 
 SKILL_FRONTMATTER = """---
 name: callables
@@ -50,16 +49,14 @@ def guide() -> str:
 
 
 def _upsert_section(path: Path) -> str:
-    """Add or refresh the callables section (replacing one written under the old shipfn name), leaving the rest of the file alone."""
+    """Add or refresh the callables section, leaving the rest of the file alone."""
     if not path.exists():
         path.write_text(AGENTS_SECTION, encoding="utf-8")
         return "created"
     text = path.read_text(encoding="utf-8")
-    for start_marker, end_marker in [(SECTION_START, SECTION_END), *LEGACY_SECTIONS]:
-        start, end = text.find(start_marker), text.find(end_marker)
-        if start != -1 and end > start:
-            updated = text[:start] + AGENTS_SECTION.rstrip("\n") + text[end + len(end_marker):]
-            break
+    start, end = text.find(SECTION_START), text.find(SECTION_END)
+    if start != -1 and end > start:
+        updated = text[:start] + AGENTS_SECTION.rstrip("\n") + text[end + len(SECTION_END):]
     else:
         updated = text.rstrip("\n") + ("\n\n" if text.strip() else "") + AGENTS_SECTION
     if updated == text:
@@ -100,12 +97,6 @@ def init_project(root: Path, example: bool = True, agents: bool = True) -> list[
 
     if agents:
         skill = root / ".claude" / "skills" / "callables" / "SKILL.md"
-        old_skill = root / ".claude" / "skills" / "shipfn" / "SKILL.md"
-        if old_skill.exists():  # written by an older version under the old name; the new one replaces it
-            old_skill.unlink()
-            if not any(old_skill.parent.iterdir()):
-                old_skill.parent.rmdir()
-            done.append((str(old_skill.relative_to(root)), "removed (renamed to callables)"))
         content = SKILL_FRONTMATTER + guide()
         existed = skill.exists()
         if existed and skill.read_text(encoding="utf-8") == content:

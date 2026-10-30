@@ -17,11 +17,9 @@ def isolated():
 def test_whole_repo_unless_a_root_is_set(tmp_path):
     assert build_root(tmp_path) == (tmp_path.resolve(), None)
     (tmp_path / "automations").mkdir()
-    (tmp_path / "pyproject.toml").write_text('[tool.shipfn]\nroot = "automations/"\n')
-    assert build_root(tmp_path) == ((tmp_path / "automations").resolve(), "pyproject.toml [tool.shipfn]")
-    (tmp_path / "shipfn.toml").write_text('root = "./automations"\n')  # a config file wins over pyproject.toml
-    assert build_root(tmp_path) == ((tmp_path / "automations").resolve(), "shipfn.toml")
-    (tmp_path / "callables.toml").write_text('root = "automations"\n')  # and the current name over the old one
+    (tmp_path / "pyproject.toml").write_text('[tool.callables]\nroot = "automations/"\n')
+    assert build_root(tmp_path) == ((tmp_path / "automations").resolve(), "pyproject.toml [tool.callables]")
+    (tmp_path / "callables.toml").write_text('root = "./automations"\n')  # a config file wins over pyproject.toml
     assert build_root(tmp_path) == ((tmp_path / "automations").resolve(), "callables.toml")
 
 
@@ -42,13 +40,13 @@ def test_root_must_be_a_folder_in_the_repo(tmp_path, value, message):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "escape").symlink_to(tmp_path)
-    (repo / "shipfn.toml").write_text(f"root = {value}\n")
+    (repo / "callables.toml").write_text(f"root = {value}\n")
     with pytest.raises(ConfigError, match=message):
         build_root(repo)
 
 
 def test_commands_use_the_same_folder_the_platform_builds(tmp_path, monkeypatch, capsys):
-    (tmp_path / "shipfn.toml").write_text('root = "autos"\n')
+    (tmp_path / "callables.toml").write_text('root = "autos"\n')
     (tmp_path / "autos").mkdir()
     (tmp_path / "autos" / "proj_root_jobs.py").write_text(
         "from callables import deploy\n\n@deploy()\ndef proj_root_fn() -> str:\n    return 'hi'\n")

@@ -14,7 +14,7 @@ from callables.schema import input_model
 def isolated(tmp_path, monkeypatch):
     registry.clear()
     files_mod._saved.clear()
-    monkeypatch.setenv("SHIPFN_OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("CALLABLES_OUTPUT_DIR", str(tmp_path / "out"))
     yield
     registry.clear()
     files_mod._saved.clear()
@@ -143,17 +143,3 @@ def test_init_sets_up_a_repo_and_is_safe_to_rerun(tmp_path):
     # An outdated section is refreshed in place
     (tmp_path / "AGENTS.md").write_text(f"top\n{SECTION_START}\nold\n{SECTION_END}\nbottom\n")
     assert dict(init_project(tmp_path, example=False))["AGENTS.md"] == "updated"
-
-
-def test_init_replaces_what_the_shipfn_version_wrote(tmp_path):
-    (tmp_path / "AGENTS.md").write_text("top\n<!-- shipfn:start -->\nold\n<!-- shipfn:end -->\nbottom\n")
-    old_skill = tmp_path / ".claude/skills/shipfn/SKILL.md"
-    old_skill.parent.mkdir(parents=True)
-    old_skill.write_text("old guide")
-    done = dict(init_project(tmp_path, example=False))
-    assert done[".claude/skills/shipfn/SKILL.md"].startswith("removed") and not old_skill.parent.exists()
-    agents = (tmp_path / "AGENTS.md").read_text()
-    assert "shipfn:start" not in agents and agents.count(SECTION_START) == 1
-    assert agents.startswith("top\n" + SECTION_START) and agents.endswith(SECTION_END + "\nbottom\n")
-    refreshed = (tmp_path / "AGENTS.md").read_text()
-    assert refreshed.startswith("top\n") and refreshed.endswith("bottom\n") and "old" not in refreshed

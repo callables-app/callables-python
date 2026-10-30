@@ -9,9 +9,9 @@ from typing import Any
 from pydantic import Field, GetCoreSchemaHandler, GetJsonSchemaHandler
 from pydantic_core import core_schema
 
-OUTPUT_DIR_ENV = "SHIPFN_OUTPUT_DIR"
+OUTPUT_DIR_ENV = "CALLABLES_OUTPUT_DIR"
 LOCAL_OUTPUT_DIR = "callables-output"  # where `call local` puts files
-FILE_FORMAT = "shipfn-file"
+FILE_FORMAT = "callables-file"
 
 _saved: list["File"] = []
 _returned: set[Path] = set()  # saved copies of files the function returned, not ones it saved alongside

@@ -27,10 +27,9 @@ Source = "https://github.com/callables-app/callables-python"
 [project.scripts]
 call = "callables.cli:main"
 callables = "callables.cli:main"
-shipfn = "callables.cli:main"  # the old name, kept for existing scripts
 
 [tool.setuptools.packages.find]
-include = ["callables*", "shipfn*"]
+include = ["callables*"]
 
 [tool.setuptools.package-data]
 callables = ["py.typed", "GUIDE.md"]

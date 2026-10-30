@@ -95,16 +95,16 @@ def test_runtime_emits_result_and_errors(tmp_path, capsys, monkeypatch):
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
     (pkg / "m.py").write_text(
-        "from datetime import date\nfrom shipfn import deploy\n"  # the old import name still deploys
+        "from datetime import date\nfrom callables import deploy\n"
         "@deploy\ndef rt_ok(n: int = 2) -> list[dict]:\n    print('working')\n    return [{'n': n, 'd': date(2026, 1, 1)}]\n"
         "@deploy\ndef rt_bad() -> None:\n    raise ValueError('nope')\n"
     )
-    monkeypatch.setenv("SHIPFN_INPUTS", json.dumps({"n": 5}))
+    monkeypatch.setenv("CALLABLES_INPUTS", json.dumps({"n": 5}))
     assert run("autos.m:rt_ok", tmp_path) == 0
     out = capsys.readouterr().out.strip().splitlines()
     assert out[0] == "working"
     assert json.loads(out[-1].removeprefix(RESULT_MARKER)) == {"ok": True, "value": [{"n": 5, "d": "2026-01-01"}], "files": []}
-    assert "SHIPFN_INPUTS" not in os.environ  # inputs are consumed, not left for user code
+    assert "CALLABLES_INPUTS" not in os.environ  # inputs are consumed, not left for user code
 
     assert run("autos.m:rt_bad", tmp_path) == 1
     last = capsys.readouterr().out.strip().splitlines()[-1]
@@ -130,13 +130,3 @@ def test_manifest_reports_import_errors(tmp_path):
     manifest = build_manifest(tmp_path)
     assert manifest["errors"][0]["module"] == "broken"
     assert "not_a_real_module_xyz" in manifest["errors"][0]["error"]
-
-
-def test_shipfn_is_the_old_name_for_callables():
-    import shipfn
-    import shipfn.files
-
-    import callables
-    import callables.files
-
-    assert shipfn.deploy is callables.deploy and shipfn.files is callables.files and shipfn.__version__ == callables.__version__

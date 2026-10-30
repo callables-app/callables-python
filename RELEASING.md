@@ -4,11 +4,9 @@ Releases go to PyPI as `callables`. Pushing a version tag runs `.github/workflow
 
 1. Bump `__version__` in `callables/__init__.py` and commit.
 2. `git tag v0.1.1 && git push origin main v0.1.1`
-3. To make deployed functions use it, update the SDK pin in shipfn-api and redeploy the API. Builds copy whatever SDK version the API has installed.
+3. To make deployed functions use it, rebuild the worker image with `bin/build-platform.sh --push` in callables-api, which takes the SDK from `../callables-python`. Builds copy whatever SDK version the image has installed.
 
-Keep changes backwards compatible: existing images keep the SDK they were built with, but every redeploy uses the API's current one, and the API reads the result and log markers in `callables/runtime.py`. Those markers and the `SHIPFN_*` environment variables keep their old names on purpose: images built before the rename still use them.
-
-The `shipfn` package in this repo is the old name, kept so `from shipfn import deploy` and the `shipfn` command keep working. Don't remove it while deployed repos may still use it.
+Existing images keep the SDK they were built with, and the API reads the result and log markers in `callables/runtime.py`. If those markers, the `CALLABLES_*` environment variables or `python -m callables run` change, every project has to be redeployed.
 
 ## One-time PyPI setup
 
