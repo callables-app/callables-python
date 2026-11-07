@@ -272,8 +272,29 @@ def _follow(root: Path, fn: dict, functions: list[dict], rows: list[dict], files
     return _local(root, target["name"], inputs, as_json=False, follow=True)
 
 
+_env_loaded = False
+
+
+def _load_env(root: Path) -> None:
+    """The project's .env (the build folder's, then the current folder's), once per process. Never on the platform:
+    `call run` doesn't come through here."""
+    global _env_loaded
+    if _env_loaded:
+        return
+    _env_loaded = True
+    from callables.envfile import load
+
+    files, added = load(root, Path.cwd())
+    if files:
+        cwd = Path.cwd().resolve()
+        shown = ", ".join(str(p.relative_to(cwd)) if p.is_relative_to(cwd) else str(p) for p in files)
+        print(f"Loaded {len(added)} variable{'s' if len(added) != 1 else ''} from {shown}", file=sys.stderr)
+
+
 def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = False) -> int:
     from pydantic import ValidationError
+
+    _load_env(root)
 
     from callables.decorator import registry
     from callables.files import output_dir, saved_files

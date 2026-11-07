@@ -24,7 +24,7 @@ def weekly_report(region: Literal["NA", "EMEA", "APAC"] = "NA", days: int = 7) -
 - **Results** are shown by return type: `str` as Markdown, `list[dict]` (or a DataFrame) as a table with CSV download, `dict`/Pydantic model as a key-value list, `None` as "done".
 - **Files in**: a `File` parameter becomes an upload field. Your function gets a `File` with `.path`, `.name`, `.read_text()`, `.read_bytes()` and `.open()`. Limit the picker with `Annotated[File, accept(".csv", ".xlsx")]`.
 - **Files out**: return a `File` (or a `list[File]`) and people get download buttons. To hand back files alongside another result, call `save_file(path_or_bytes, name=...)`. Files are kept for 24 hours by default.
-- **Secrets** you list are injected as environment variables at run time (`os.environ["SALES_API_TOKEN"]`); set their values in the Callables console.
+- **Secrets** you list are injected as environment variables at run time (`os.environ["SALES_API_TOKEN"]`); set their values in the Callables console. Locally, `call local` and `call <group> <action>` load the project's `.env` instead (variables already set in your shell win).
 - **Schedules** are cron expressions, in UTC.
 
 ```python

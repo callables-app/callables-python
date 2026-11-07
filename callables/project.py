@@ -1,5 +1,6 @@
 """Which folder of a repo the platform builds. By default the whole repo; a repo can point it at a subfolder,
-and then only that folder is built: its requirements.txt / pyproject.toml, apt.txt and .python-version."""
+and then only that folder is built: its requirements.txt / pyproject.toml, apt.txt and .python-version.
+A project's own folder setting wins over the repo's config, so one repo can back several projects."""
 import tomllib
 from pathlib import Path, PurePosixPath
 
@@ -34,10 +35,11 @@ def _configured_root(repo: Path) -> tuple[object, str] | None:
     return None
 
 
-def build_root(repo: Path) -> tuple[Path, str | None]:
-    """The folder to build, and where that setting came from (None when it's the whole repo)."""
+def build_root(repo: Path, project_root: str | None = None) -> tuple[Path, str | None]:
+    """The folder to build, and where that setting came from (None when it's the whole repo). `project_root` is the
+    project's folder setting, relative to the repo."""
     repo = repo.resolve()
-    configured = _configured_root(repo)
+    configured = (project_root, "the project's settings") if project_root else _configured_root(repo)
     if configured is None:
         return repo, None
     value, source = configured

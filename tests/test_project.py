@@ -14,6 +14,18 @@ def isolated():
     registry.clear()
 
 
+def test_the_projects_folder_wins_over_the_repo_config(tmp_path):
+    (tmp_path / "automations" / "email").mkdir(parents=True)
+    (tmp_path / "callables.toml").write_text('root = "automations"\n')
+    assert build_root(tmp_path, "automations/email") == (
+        (tmp_path / "automations" / "email").resolve(), "the project's settings")
+    assert build_root(tmp_path, "") == ((tmp_path / "automations").resolve(), "callables.toml")
+    with pytest.raises(ConfigError, match="no folder"):
+        build_root(tmp_path, "salesforce")
+    with pytest.raises(ConfigError, match="inside the repo"):
+        build_root(tmp_path, "../other")
+
+
 def test_whole_repo_unless_a_root_is_set(tmp_path):
     assert build_root(tmp_path) == (tmp_path.resolve(), None)
     (tmp_path / "automations").mkdir()

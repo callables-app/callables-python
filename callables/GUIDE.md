@@ -10,7 +10,7 @@ The person running an automation can't see the code, a traceback or a terminal. 
 
 1. Write or change a function decorated with `@deploy`.
 2. `call check` (or `call check --json`) lists every problem a deploy would hit, with a fix for each. Exit code 1 means the deploy would fail.
-3. `call local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform.
+3. `call local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform. It loads the project's `.env` first, so it finds the secrets the platform would give it.
 4. Push. The platform builds and deploys on push.
 
 Run `call check` before every push. If any module fails to import, nothing is published.
@@ -44,7 +44,7 @@ def closed_deals(region: Literal["NA", "EMEA", "APAC"] = "NA", since: date | Non
 - `name`: the function's identity on the platform. It defaults to the function name. **Renaming it creates a new automation**, and the old one's history and schedules stay behind. Pass `name="..."` to keep the identity if you rename the Python function.
 - `title`: the card and page heading. It defaults to the name, turned into a sentence.
 - `description`: the first paragraph of the docstring is the default. Write one plain-language sentence about what it does for the person.
-- `secrets`: names of environment variables, which builders set in the web app. Read them with `os.environ["CRM_TOKEN"]`. Never hard-code credentials and never take them as inputs. A declared secret that nobody has set doesn't block the run: the variable is simply missing, and builders see a "missing secrets" warning. For an optional secret, declare it and read it with `os.environ.get(...)`. Each secret is a single value, so a key file such as a `.pem` goes in as the file's contents, and the code reads it from the variable.
+- `secrets`: names of environment variables, which builders set in the web app. Read them with `os.environ["CRM_TOKEN"]`. Never hard-code credentials and never take them as inputs. A declared secret that nobody has set doesn't block the run: the variable is simply missing, and builders see a "missing secrets" warning. For an optional secret, declare it and read it with `os.environ.get(...)`. Locally, `call local` and `call <group> <action>` load `.env` from the build folder, then the folder you run from, without overriding variables already set in your shell. The platform never reads `.env`. Each secret is a single value, so a key file such as a `.pem` goes in as the file's contents, and the code reads it from the variable.
 - `timeout`: in seconds. The default is 300 and the maximum is 900.
 - `schedule`: a cron expression in UTC, for schedules owned by the code. Only use it when the user asks for one. Anyone can add a schedule in the web app, so you usually don't need it.
 
@@ -98,7 +98,7 @@ def render(slug: str, open_browser: bool = False) -> str:
 ```
 
 - They run as `call audits render --slug x` and with `call local`, with flags from the type hints, like any action. `call check` lists them as "(local only)".
-- They're never deployed: the platform doesn't see them and nobody can run them from the web app. `@command` takes `name`, `title`, `description` and `next`, but no `secrets`, `schedule` or `timeout`, because it runs in your own environment (read secrets from `.env`). A deployed action's `next=` can't point at one.
+- They're never deployed: the platform doesn't see them and nobody can run them from the web app. `@command` takes `name`, `title`, `description` and `next`, but no `secrets`, `schedule` or `timeout`, because it runs in your own environment (`call` loads the project's `.env` for it). A deployed action's `next=` can't point at one.
 - Their module is still imported when the platform builds, so keep imports that only work locally inside the function.
 - Return the result instead of printing it. The CLI prints what you return (a table as aligned columns in a terminal, JSON when piped), so printing it as well shows it twice. Keep prints for progress.
 - To deploy one later, change `@command` to `@deploy`. It keeps its name.
@@ -212,6 +212,7 @@ def clean_contacts(sheet: Annotated[File, accept(".csv")]) -> File:
 - **Python version:** taken from `.python-version` (e.g. `3.13`), else the newest version your `pyproject.toml` `requires-python` allows, else 3.12. Supported: 3.11 to 3.14.
 - **Python dependencies** come from `requirements.txt` at the repo root, or from `[project].dependencies` in `pyproject.toml`. **Don't list `callables`.** The platform installs its own matching copy.
 - **Automations in a subfolder:** by default the whole repo is built. To build only one folder, add `callables.toml` at the repo root containing `root = "automations"` (or `[tool.callables] root = "automations"` in `pyproject.toml`). Then only that folder goes into the image, and its own `requirements.txt`, `apt.txt` and `.python-version` are used. Code in it can't import from the rest of the repo. `call check`, `local` and `manifest` use the same folder when run from the repo root.
+- **Several projects from one repo:** one repo can back several projects, one per folder. Set **Folder** when creating the project in the web app (it takes priority over `root` in `callables.toml`), and each folder builds with its own `requirements.txt`, `apt.txt` and `.python-version`. A push rebuilds only the projects whose folder changed. Each project has its own secrets and counts toward the plan's project limit. Locally, pass `--root automations/email` to `call check`, `local` and `manifest`.
 - **Writable space:** your home directory (`~`), and `/tmp`, which is limited to 256 MB. Your code in `/app` is read-only. Every run starts fresh, so nothing persists between runs. Keep state in your own database or storage.
 - **Running downloaded binaries:** `/tmp` doesn't allow running programs, so a binary downloaded there fails with `Permission denied`. Put it under `~` and `chmod +x` it. Better still, install the tool with `apt.txt` (below).
 - Every module that imports `callables` and mentions `deploy` is imported at build time. Keep import-time code cheap and free of side effects: no network calls, and no reading secrets at module level. Read secrets inside the function.
@@ -238,6 +239,8 @@ You don't size anything. A run can use memory and CPU up to your organisation's 
 
 If a run goes over the memory limit, it fails with an error that says so. Fix it by using less memory (process files in chunks, stream instead of loading everything, free large objects you're done with), or move to a bigger plan. Child processes count toward the same limit.
 
+Each plan includes an amount of usage per billing period. On a trial or the Free plan, reaching it cancels queued and running runs, and new runs and schedules wait until the next period or until the workspace picks a plan. Paid plans keep running and are billed for the extra usage.
+
 ## Errors people will see
 
 Raise exceptions with messages written for the person running the automation. They see `ValueError: No deals found for EMEA since 2026-01-01`, so make it say what to change. For bad input, raise `ValueError` with a message about that field.
@@ -245,8 +248,8 @@ Raise exceptions with messages written for the person running the automation. Th
 ## Commands
 
 - `call check [--json]`: problems a deploy would hit, with fixes. Exit code 1 on errors.
-- `call <group> <action> [--flags]` (or `call <function> [--flags]`): run a function like a CLI command. Each input is a flag (`days` becomes `--days`, a bool becomes `--dry-run/--no-dry-run`, a list takes several values). Add `--help` to see them.
-- `call local <name> [-i key=value ...] [--json]`: run a function on this machine. Values are parsed as JSON when possible, and `@path` passes a file. `--json` prints one JSON object on stdout (`ok`, `value`, `files`, `error`, `field_errors`), and the function's own prints go to stderr.
+- `call <group> <action> [--flags]` (or `call <function> [--flags]`): run a function like a CLI command. Each input is a flag (`days` becomes `--days`, a bool becomes `--dry-run/--no-dry-run`, a list takes several values). Add `--help` to see them. Loads the project's `.env` first, like `call local`.
+- `call local <name> [-i key=value ...] [--json]`: run a function on this machine, after loading the project's `.env` (variables already set win). Values are parsed as JSON when possible, and `@path` passes a file. `--json` prints one JSON object on stdout (`ok`, `value`, `files`, `error`, `field_errors`), and the function's own prints go to stderr.
 - `call manifest`: the full JSON the platform reads, including each input's JSON Schema. Local `@command`s are left out.
 - `call docs`: prints this guide.
 - `call init`: an example automation plus agent instructions (`.claude/skills/callables/SKILL.md` and an `AGENTS.md` section). Run it again after upgrading the SDK to refresh the instructions.
