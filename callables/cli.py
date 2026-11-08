@@ -112,6 +112,11 @@ def _check(root: Path, as_json: bool) -> int:
         print(f"  {fn['name']}  ({', '.join(fn['inputs']) or 'no inputs'}) -> {fn['output_kind']}{local}")
     if report["functions"]:
         print()
+    for conn in report.get("connections", []):
+        print(f"  connection {conn['name']} ({conn['title']}): set project secrets {' and '.join(conn['secrets'])}; "
+              f"locally, put a token in .env as {conn['env_var']}")
+    if report.get("connections"):
+        print()
     for issue in report["issues"]:
         where = f"[{issue['function']}] " if issue.get("function") else ""
         print(f"{issue['level']}: {where}{issue['message']}")

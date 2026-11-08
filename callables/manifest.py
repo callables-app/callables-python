@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from callables import connections as connection_registry
 from callables.decorator import registry
 
 SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "tests", "test", ".callables_sdk", "build", "dist"}
@@ -63,13 +64,26 @@ def build_manifest(root: Path, include_local: bool = False) -> dict[str, Any]:
         if fn.group is None:
             continue
         first = groups.setdefault(fn.group.name, fn.group)
-        if first is not fn.group and (first.manifest_entry(), first.secrets) != (fn.group.manifest_entry(), fn.group.secrets):
+        settings = lambda g: (g.manifest_entry(), g.secrets, [c.name for c in g.connections])  # noqa: E731
+        if first is not fn.group and settings(first) != settings(fn.group):
             errors.append({"function": fn.name, "error": f"Group '{fn.group.name}' is defined twice with different "
                            "settings. Define it once and import it where you need it."})
+
+    for name in dict.fromkeys(connection_registry.conflicts):
+        errors.append({"module": f"Connection '{name}'", "error": "defined twice with different settings. Define it "
+                       "once and import it where you need it."})
+    # Only the connections a deployed function uses; the platform keys them by name within the project
+    used: dict[str, Any] = {}
+    for fn in registry.values():
+        if include_local or not fn.local_only:
+            for conn in fn.all_connections:
+                used[conn.name] = conn
+    connections = [used[name].manifest_entry() for name in sorted(used)]
 
     return {
         "manifest_version": MANIFEST_VERSION,
         "sdk_version": __version__,
         "functions": functions,
+        "connections": connections,
         "errors": errors,
     }

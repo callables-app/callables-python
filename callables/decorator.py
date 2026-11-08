@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from callables.connections import Connection
 from callables.schema import file_fields, input_model, input_schema, output_kind, returns_one_file
 
 
@@ -14,7 +15,7 @@ RESERVED_GROUP_NAMES = {"check", "local", "manifest", "docs", "init", "run", "he
 
 class Group:
     """A set of related actions, like a Typer sub-app: `call <group> <action>` locally, and one section of the
-    project in the web app. Secrets listed here are given to every action in the group.
+    project in the web app. Secrets and connections listed here are given to every action in the group.
 
         backups = Group("backups", title="Database backups", secrets=["SPACES_KEY"])
 
@@ -23,7 +24,7 @@ class Group:
     """
 
     def __init__(self, name: str, *, title: str | None = None, description: str = "",
-                 secrets: list[str] | None = None):
+                 secrets: list[str] | None = None, connections: list[Connection] | None = None):
         if not GROUP_NAME.match(name):
             raise ValueError(f"Group name '{name}' must be lowercase letters, digits, '-' or '_', starting with a "
                              "letter (it's typed as `call <group> <action>`)")
@@ -33,6 +34,7 @@ class Group:
         self.title = title or name.replace("_", " ").replace("-", " ").capitalize()
         self.description = description
         self.secrets = list(secrets or [])
+        self.connections = _connection_list(connections, f"Group '{name}'")
 
     def deploy(self, func: Callable[..., Any] | None = None, **options: Any):
         """`@deploy` for an action in this group; takes the same options. Its full name is `<group>.<name>`."""
@@ -111,6 +113,7 @@ class DeployedFunction:
     title: str
     description: str
     secrets: list[str] = field(default_factory=list)
+    connections: list[Connection] = field(default_factory=list)
     schedule: str | None = None
     timeout: int = 300
     group: Group | None = None
@@ -122,6 +125,12 @@ class DeployedFunction:
     def all_secrets(self) -> list[str]:
         """The group's secrets, then the action's own, without repeats."""
         return list(dict.fromkeys([*(self.group.secrets if self.group else []), *self.secrets]))
+
+    @property
+    def all_connections(self) -> list[Connection]:
+        """The group's connections, then the action's own, without repeats."""
+        both = [*(self.group.connections if self.group else []), *self.connections]
+        return list({c.name: c for c in both}.values())
 
     @property
     def entrypoint(self) -> str:
@@ -136,6 +145,7 @@ class DeployedFunction:
             "input_schema": input_schema(self.func),
             "output_kind": output_kind(self.func),
             "secrets": self.all_secrets,
+            "connections": [c.name for c in self.all_connections],
             "schedule": self.schedule,
             "timeout": self.timeout,
             "group": self.group.manifest_entry() if self.group else None,
@@ -151,6 +161,14 @@ class DeployedFunction:
         return self.func(**kwargs)
 
 
+def _connection_list(items: list[Connection] | None, where: str) -> list[Connection]:
+    for item in items or []:
+        if not isinstance(item, Connection):
+            raise TypeError(f"{where}: connections takes Connection objects, not {item!r}. "
+                            "Define it with Connection('name', provider=...) and pass the object")
+    return list(items or [])
+
+
 # Every @deploy in an imported module lands here; `call manifest` reads it.
 registry: dict[str, DeployedFunction] = {}
 
@@ -162,6 +180,7 @@ def deploy(
     title: str | None = None,
     description: str | None = None,
     secrets: list[str] | None = None,
+    connections: list[Connection] | None = None,
     schedule: str | None = None,
     timeout: int = 300,
     next: list[Next | Callable[..., Any] | str] | None = None,  # noqa: A002 (reads best as @deploy(next=[...]))
@@ -179,6 +198,8 @@ def deploy(
         description: One line shown on the card (defaults to the docstring's first paragraph).
         secrets: Environment variable names to inject at run time; values are set in the web app.
             Read them inside the function with `os.environ["NAME"]`.
+        connections: `Connection` objects for accounts each person connects themselves (their Gmail, their
+            Slack). Read `conn.token` inside the function: it's for the person running it.
         schedule: Cron expression in UTC (e.g. "0 9 * * MON"). Every input needs a default.
             Usually unnecessary: anyone can schedule a function from the web app.
         timeout: Seconds before the run is stopped (default 300, platform maximum 900).
@@ -208,6 +229,7 @@ def deploy(
             title=title or action.replace("_", " ").capitalize(),
             description=description or doc.split("\n\n")[0],
             secrets=list(secrets or []),
+            connections=_connection_list(connections, fn_name),
             schedule=schedule,
             timeout=timeout,
             group=_group,

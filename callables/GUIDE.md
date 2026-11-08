@@ -2,7 +2,7 @@
 
 Callables turns Python functions into web forms that non-technical teammates run. A developer decorates a function with `@deploy` and pushes the repo. The platform builds it and shows each function as a form, generated from the type hints, with run history. People can also schedule runs from the web app.
 
-This guide matches the installed SDK version. The full docs, including setup, secrets, schedules, sharing and limits, are at https://callables.app/docs. Every page is also served as Markdown: add `.md` to its URL (for example https://callables.app/docs/inputs.md), or read https://callables.app/llms.txt for an index.
+This guide matches the installed SDK version. The full docs, including setup, secrets, connections, schedules, sharing and limits, are at https://callables.app/docs. Every page is also served as Markdown: add `.md` to its URL (for example https://callables.app/docs/inputs.md), or read https://callables.app/llms.txt for an index.
 
 The person running an automation can't see the code, a traceback or a terminal. Everything they see comes from the decorator, the docstring, the parameter names and types, and the return value. Write for them.
 
@@ -45,6 +45,7 @@ def closed_deals(region: Literal["NA", "EMEA", "APAC"] = "NA", since: date | Non
 - `title`: the card and page heading. It defaults to the name, turned into a sentence.
 - `description`: the first paragraph of the docstring is the default. Write one plain-language sentence about what it does for the person.
 - `secrets`: names of environment variables, which builders set in the web app. Read them with `os.environ["CRM_TOKEN"]`. Never hard-code credentials and never take them as inputs. A declared secret that nobody has set doesn't block the run: the variable is simply missing, and builders see a "missing secrets" warning. For an optional secret, declare it and read it with `os.environ.get(...)`. Locally, `call local` and `call <group> <action>` load `.env` from the build folder, then the folder you run from, without overriding variables already set in your shell. The platform never reads `.env`. Each secret is a single value, so a key file such as a `.pem` goes in as the file's contents, and the code reads it from the variable.
+- `connections`: `Connection` objects for accounts each person connects themselves, such as their Gmail. See Connections below.
 - `timeout`: in seconds. The default is 300 and the maximum is 900.
 - `schedule`: a cron expression in UTC, for schedules owned by the code. Only use it when the user asks for one. Anyone can add a schedule in the web app, so you usually don't need it.
 
@@ -148,6 +149,33 @@ def search(query: str) -> list[dict]:
 - People only see next actions they're allowed to run.
 - If a result tells people to run another step ("Next: upload this to step 2"), use `next=` instead of writing it in the text. Text isn't clickable, and `next=` carries the file or row values along.
 
+## Connections: act on the person's own account
+
+Use a connection when each person should use their own account (their Gmail, calendar, Slack, GitHub). Use secrets when every run should share one account.
+
+```python
+from callables import Connection, deploy
+
+google = Connection("google", provider="google", scopes=["gmail.modify", "calendar.readonly"])
+
+
+@deploy(title="Triage my inbox", connections=[google])
+def triage_inbox() -> str:
+    headers = {"Authorization": f"Bearer {google.token}"}
+    ...
+```
+
+- The developer brings the OAuth app. Create it in the service's console with the redirect URI `https://callables.app/connections/callback`, then set `<NAME>_CLIENT_ID` and `<NAME>_CLIENT_SECRET` as project secrets (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for a connection named `google`). Other secret names: `client_id_secret=`, `client_secret_secret=`. `call check` lists what each connection reads.
+- Presets: `google`, `microsoft` (`tenant=` for a single-tenant app), `slack`, `github`, `notion`. Presets accept short scope names (`"gmail.modify"`) and handle the service's quirks, such as asking for offline access.
+- Any other OAuth 2.0 service: pass `authorize_url`, `token_url` and `scopes` instead of `provider`. Options for services that differ: `authorize_params`, `token_endpoint_auth_method="client_secret_basic"`, `token_request_format="json"`, `scope_separator=","`, `scope_param`, `pkce=True`, `token_path`, `userinfo_url`, `account_field`, `revoke_url`, and `placeholders` for URLs that depend on the person (such as `{shop}`).
+- During a run: `.token` (valid for the whole run), `.account`, `.scopes_granted`, `.extra`. A module-level object is safe because every run is its own process, for one person. The token is also in `<NAME>_ACCESS_TOKEN`. Read `.token` inside the function, never at module level, and never print it.
+- Each person connects once per project, on the service's own consent screen, the first time they open a function that needs it. A run uses the connection of the person who started it, or of the person who made the schedule, never anyone else's. If they haven't connected, the run doesn't start.
+- The connection's name is its identity. Renaming it makes everyone connect again. Use one connection per service per project with every scope the project needs.
+- `Group(..., connections=[google])` declares a connection for every action in a group.
+- Locally, put a token for your own account in `.env` as `<NAME>_ACCESS_TOKEN`. Builders try the real flow from the project page's Connections card.
+- Ask for the narrowest scopes that work. Never take tokens, passwords or account emails as form inputs.
+- Full reference: https://callables.app/docs/connections
+
 ## Inputs: type hints become the form
 
 | Type hint | Form field |
@@ -212,7 +240,7 @@ def clean_contacts(sheet: Annotated[File, accept(".csv")]) -> File:
 - **Python version:** taken from `.python-version` (e.g. `3.13`), else the newest version your `pyproject.toml` `requires-python` allows, else 3.12. Supported: 3.11 to 3.14.
 - **Python dependencies** come from `requirements.txt` at the repo root, or from `[project].dependencies` in `pyproject.toml`. **Don't list `callables`.** The platform installs its own matching copy.
 - **Automations in a subfolder:** by default the whole repo is built. To build only one folder, add `callables.toml` at the repo root containing `root = "automations"` (or `[tool.callables] root = "automations"` in `pyproject.toml`). Then only that folder goes into the image, and its own `requirements.txt`, `apt.txt` and `.python-version` are used. Code in it can't import from the rest of the repo. `call check`, `local` and `manifest` use the same folder when run from the repo root.
-- **Several projects from one repo:** one repo can back several projects, one per folder. Set **Folder** when creating the project in the web app (it takes priority over `root` in `callables.toml`), and each folder builds with its own `requirements.txt`, `apt.txt` and `.python-version`. A push rebuilds only the projects whose folder changed. Each project has its own secrets and counts toward the plan's project limit. Locally, pass `--root automations/email` to `call check`, `local` and `manifest`.
+- **Several projects from one repo:** one repo can back several projects, one per folder. Set **Folder** when creating the project in the web app, or change it later on the project page, which redeploys (it takes priority over `root` in `callables.toml`), and each folder builds with its own `requirements.txt`, `apt.txt` and `.python-version`. A push rebuilds only the projects whose folder changed. Each project has its own secrets and counts toward the plan's project limit. Locally, pass `--root automations/email` to `call check`, `local` and `manifest`.
 - **Writable space:** your home directory (`~`), and `/tmp`, which is limited to 256 MB. Your code in `/app` is read-only. Every run starts fresh, so nothing persists between runs. Keep state in your own database or storage.
 - **Running downloaded binaries:** `/tmp` doesn't allow running programs, so a binary downloaded there fails with `Permission denied`. Put it under `~` and `chmod +x` it. Better still, install the tool with `apt.txt` (below).
 - Every module that imports `callables` and mentions `deploy` is imported at build time. Keep import-time code cheap and free of side effects: no network calls, and no reading secrets at module level. Read secrets inside the function.

@@ -112,5 +112,10 @@ def check_project(root: Path) -> dict[str, Any]:
              "local_only": bool(f.get("local_only"))}
             for f in manifest["functions"]
         ],
+        "connections": [
+            {"name": c["name"], "title": c["title"], "scopes": c["scopes"],
+             "secrets": [c["client_id_secret"], c["client_secret_secret"]], "env_var": c["env_var"]}
+            for c in manifest.get("connections", [])
+        ],
         "issues": issues,
     }
