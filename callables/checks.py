@@ -114,7 +114,11 @@ def check_project(root: Path) -> dict[str, Any]:
         ],
         "connections": [
             {"name": c["name"], "title": c["title"], "scopes": c["scopes"],
-             "secrets": [c["client_id_secret"], c["client_secret_secret"]], "env_var": c["env_var"]}
+             "secrets": [c["client_id_secret"], c["client_secret_secret"],
+                         *[s for s, default in (c.get("secret_placeholders") or {}).values() if default is None]],
+             "optional_secrets": [s for s, default in (c.get("secret_placeholders") or {}).values()
+                                  if default is not None],
+             "env_var": c["env_var"]}
             for c in manifest.get("connections", [])
         ],
         "issues": issues,

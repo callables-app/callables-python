@@ -1,7 +1,7 @@
 """Callables SDK: mark functions with @deploy and push the repo; the platform does the rest."""
-from callables.connections import Connection
+from callables.connections import Ask, Connection, Secret
 from callables.decorator import DeployedFunction, Group, Next, command, deploy, registry
 from callables.files import File, accept, save_file
 
-__version__ = "0.5.0"
-__all__ = ["deploy", "command", "Group", "Next", "Connection", "DeployedFunction", "registry", "File", "accept", "save_file", "__version__"]
+__version__ = "0.6.0"
+__all__ = ["deploy", "command", "Group", "Next", "Connection", "Secret", "Ask", "DeployedFunction", "registry", "File", "accept", "save_file", "__version__"]

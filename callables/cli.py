@@ -61,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and not argv[0].startswith("-") and argv[0] not in sub.choices:
         return _command(argv)  # call <group> <action> --flags, or call <function> --flags
+    if len(argv) >= 3 and argv[0] == "local" and not argv[1].startswith("-") and not argv[2].startswith("-"):
+        return _command(argv[1:])  # call local <group> <action> --flags: the command form, with "local" in front
 
     args = parser.parse_args(argv)
 
@@ -132,8 +134,10 @@ def _check(root: Path, as_json: bool) -> int:
     if report["functions"]:
         print()
     for conn in report.get("connections", []):
-        print(f"  connection {conn['name']} ({conn['title']}): set project secrets {' and '.join(conn['secrets'])}; "
-              f"locally, `call connect {conn['name']}` (with those two in .env)")
+        optional = conn.get("optional_secrets") or []
+        print(f"  connection {conn['name']} ({conn['title']}): set project secrets {', '.join(conn['secrets'])}"
+              + (f" (optional: {', '.join(optional)})" if optional else "")
+              + f"; locally, `call connect {conn['name']}` (with those in .env)")
     if report.get("connections"):
         print()
     for issue in report["issues"]:

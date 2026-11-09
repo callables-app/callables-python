@@ -3,7 +3,7 @@ import textwrap
 
 import pytest
 
-from callables import Connection, Group, deploy, registry
+from callables import Ask, Connection, Group, Secret, deploy, registry
 from callables import connections as connection_registry
 from callables.checks import check_project
 from callables.connections import ConnectionNotAvailable
@@ -37,6 +37,7 @@ def test_microsoft_tenant_and_offline_access():
     ms = Connection("outlook", provider="microsoft", scopes=["Mail.ReadWrite"], tenant="contoso.onmicrosoft.com")
     assert ms.authorize_url == "https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/authorize"
     assert ms.scopes == ["offline_access", "User.Read", "Mail.ReadWrite"]
+    # The preset fills {tenant} with "common" unless values says otherwise
     assert Connection("ms", provider="microsoft").token_url.startswith("https://login.microsoftonline.com/common/")
 
 
@@ -55,10 +56,15 @@ def test_custom_provider_and_overrides():
     ({"provider": "gogle"}, "unknown provider"),
     ({}, "needs a provider"),
     ({"authorize_url": "http://x.example/a", "token_url": "https://x.example/t"}, "must start with https://"),
-    ({"authorize_url": "https://{shop}.example/a", "token_url": "https://x.example/t"}, "isn't in placeholders"),
-    ({"provider": "google", "placeholders": {"shop": "Store"}}, "isn't used"),
+    ({"authorize_url": "https://{shop}.example/a", "token_url": "https://x.example/t"}, "nothing fills it in"),
+    ({"provider": "google", "placeholders": {"shop": "Store"}}, "doesn't match a {shop}"),
+    ({"provider": "google", "values": {"shop": Ask("Store")}}, "doesn't match a {shop}"),
+    ({"provider": "google", "client_id": "GOOGLE_ID"}, "must be Secret"),
+    ({"provider": "google", "client_id": Secret("A"), "client_id_secret": "B"}, "not both"),
+    ({"provider": "microsoft", "values": {"tenant": "evil.com/x"}}, "plain value"),
+    ({"provider": "microsoft", "values": {"tenant": 7}}, "must be Secret"),
     ({"provider": "google", "token_endpoint_auth_method": "basic"}, "token_endpoint_auth_method"),
-    ({"provider": "google", "tenant": "x"}, "tenant only applies"),
+    ({"provider": "google", "tenant": "x"}, "doesn't match a {tenant}"),
 ])
 def test_bad_settings_fail_at_definition(kwargs, message):
     with pytest.raises(ValueError, match=message):
@@ -165,3 +171,37 @@ def test_a_connection_defined_twice_differently_fails_the_manifest(tmp_path):
 def test_group_rejects_strings():
     with pytest.raises(TypeError):
         Group("mail", connections=["google"])
+
+
+def test_values_fill_placeholders_from_secrets_asks_or_strings():
+    from callables import connections as registry
+    registry.connections.clear()
+    ms = Connection("outlook", provider="microsoft", scopes=["Mail.Read"], client_id=Secret("MS_CLIENT_ID"),
+                    client_secret=Secret("MS_CLIENT_SECRET"), values={"tenant": Secret("MS_TENANT_ID", default="common")})
+    entry = ms.manifest_entry()
+    assert "{tenant}" in entry["authorize_url"] and entry["secret_placeholders"] == {"tenant": ["MS_TENANT_ID", "common"]}
+    assert entry["client_id_secret"] == "MS_CLIENT_ID" and entry["client_secret_secret"] == "MS_CLIENT_SECRET"
+    registry.connections.clear()
+    assert Connection("o", provider="microsoft", values={"tenant": Secret("T")}).secret_placeholders == {"tenant": ["T", None]}
+    registry.connections.clear()
+    fixed = Connection("o", provider="microsoft", values={"tenant": "acme.onmicrosoft.com"})
+    assert "/acme.onmicrosoft.com/" in fixed.token_url and fixed.secret_placeholders == {}
+    # Any service, any placeholder, in URLs or sign-in parameters: no SDK change needed
+    okta = Connection("okta", authorize_url="https://{domain}/oauth2/v1/authorize", token_url="https://{domain}/oauth2/v1/token",
+                      authorize_params={"audience": "{audience}"},
+                      values={"domain": Secret("OKTA_DOMAIN"), "audience": Ask("Your API audience")})
+    assert okta.secret_placeholders == {"domain": ["OKTA_DOMAIN", None]} and okta.placeholders == {"audience": "Your API audience"}
+    with pytest.raises(ValueError, match="environment variable name"):
+        Secret("not valid")
+    with pytest.raises(ValueError, match="needs a prompt"):
+        Ask("  ")
+
+def test_older_spellings_still_work():
+    from callables import connections as registry
+    registry.connections.clear()
+    shop = Connection("shopify", authorize_url="https://{shop}.myshopify.com/a", token_url="https://{shop}.myshopify.com/t",
+                      placeholders={"shop": "Your store"}, client_id_secret="SHOP_ID", client_secret_secret="SHOP_SECRET")
+    assert shop.placeholders == {"shop": "Your store"} and shop.client_id_secret == "SHOP_ID"
+    registry.connections.clear()
+    ms = Connection("outlook", provider="microsoft", tenant="contoso.onmicrosoft.com")
+    assert "/contoso.onmicrosoft.com/" in ms.authorize_url

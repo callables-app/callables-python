@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -88,6 +89,35 @@ def _client(conn: Connection) -> tuple[str, str]:
 
 def _fill(url: str, values: dict[str, str]) -> str:
     return PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), url)
+
+
+VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$")  # a placeholder value becomes part of a hostname or path
+
+
+def _url_values(conn: Connection, answers: dict[str, str]) -> dict[str, str]:
+    """Placeholder values: your answers to Ask(...), plus Secret(...) values from the environment or .env."""
+    values = dict(answers)
+    for placeholder, (secret, default) in conn.secret_placeholders.items():
+        value = (os.environ.get(secret) or "").strip() or default
+        if not value:
+            raise LocalAuthError(f"Put {secret} in .env (the same value as the project's secret on Callables).")
+        if not VALUE.match(value):
+            raise LocalAuthError(f"{secret} in .env isn't valid: use letters, digits, '.' and '-'")
+        values[placeholder] = value
+    return values
+
+
+def _words(names: list[str]) -> str:
+    """A, B and C"""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def missing_settings(conn: Connection) -> list[str]:
+    """Environment variables the connection needs that aren't set: the client ID and secret, and any Secret(...)
+    value without a default."""
+    names = [conn.client_id_secret, conn.client_secret_secret]
+    names += [secret for secret, default in conn.secret_placeholders.values() if default is None]
+    return [n for n in names if not (os.environ.get(n) or "").strip()]
 
 
 def _dig(data: Any, path: str) -> Any:
@@ -255,18 +285,22 @@ def connect(conn: Connection, port: int = DEFAULT_PORT, open_browser: bool = Tru
     """Signs in through the browser and keeps the tokens. Returns the stored entry."""
     client_id, client_secret = _client(conn)
     values = {name: ask(f"{prompt}: ").strip() for name, prompt in conn.placeholders.items()}
+    bad = [v for v in values.values() if not VALUE.match(v)]
+    if bad:
+        raise LocalAuthError(f"'{bad[0]}' isn't valid there: use letters, digits, '.' and '-'")
+    urls = _url_values(conn, values)
     redirect_uri = f"http://localhost:{port}/callback"
     state = secrets.token_urlsafe(24)
     verifier = secrets.token_urlsafe(48)
     params = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri, "state": state,
-              **conn.authorize_params}
+              **{k: _fill(v, urls) if isinstance(v, str) else v for k, v in conn.authorize_params.items()}}
     if conn.scopes:
         params[conn.scope_param] = conn.scope_separator.join(conn.scopes)
     if conn.pkce:
         params["code_challenge"] = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(
             b"=").decode()
         params["code_challenge_method"] = "S256"
-    url = f"{_fill(conn.authorize_url, values)}?{urlencode(params)}"
+    url = f"{_fill(conn.authorize_url, urls)}?{urlencode(params)}"
 
     catcher = _Catcher(port, state)
     print(f"Your OAuth app needs this redirect URI (besides Callables' own): {redirect_uri}", file=out)
@@ -285,7 +319,7 @@ def connect(conn: Connection, port: int = DEFAULT_PORT, open_browser: bool = Tru
     data = {"grant_type": "authorization_code", "code": result["code"], "redirect_uri": redirect_uri}
     if conn.pkce:
         data["code_verifier"] = verifier
-    tokens = _tokens(conn, _post(_fill(conn.token_url, values), data, conn, client_id, client_secret))
+    tokens = _tokens(conn, _post(_fill(conn.token_url, urls), data, conn, client_id, client_secret))
     missing = missing_scopes(conn.scopes, tokens["granted"])
     if missing:
         raise LocalAuthError(f"{conn.title} didn't grant every permission this connection asks for (missing: "
@@ -331,11 +365,11 @@ def _find(conn: Connection) -> tuple[str, dict[str, Any]] | None:
 
 def status(conn: Connection) -> tuple[str, str]:
     """(state, detail) for `call connect`'s list. state: connected, reconnect, missing or setup."""
-    missing_creds = [n for n in (conn.client_id_secret, conn.client_secret_secret) if not os.environ.get(n)]
+    missing_creds = missing_settings(conn)
     found = _find(conn)
     if found is None:
         if missing_creds:
-            return "setup", f"put {' and '.join(missing_creds)} in .env first"
+            return "setup", f"put {_words(missing_creds)} in .env first"
         return "missing", "not connected"
     _, entry = found
     account = entry.get("account") or "connected"
@@ -344,7 +378,7 @@ def status(conn: Connection) -> tuple[str, str]:
     if entry.get("expires_at") and entry["expires_at"] < time.time() and not entry.get("refresh_token"):
         return "reconnect", f"{account}, access expired"
     if missing_creds:
-        return "setup", f"{account}, but {' and '.join(missing_creds)} isn't in .env (needed to refresh)"
+        return "setup", f"{account}, but {_words(missing_creds)} isn't in .env (needed to refresh)"
     return "connected", account
 
 
@@ -384,7 +418,7 @@ def _refresh(conn: Connection, key: str, entry: dict[str, Any]) -> dict[str, Any
     if not entry.get("refresh_token"):
         raise LocalAuthError("access expired and the service gave no refresh token")
     client_id, client_secret = _client(conn)
-    body = _post(_fill(conn.token_url, entry.get("values") or {}),
+    body = _post(_fill(conn.token_url, _url_values(conn, entry.get("values") or {})),
                  {"grant_type": "refresh_token", "refresh_token": entry["refresh_token"]},
                  conn, client_id, client_secret)
     tokens = _tokens(conn, body, old_refresh=entry["refresh_token"])

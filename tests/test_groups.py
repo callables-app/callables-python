@@ -156,3 +156,8 @@ def test_local_needs_the_group_and_suggests_it():
     assert "Did you mean gmail.recent_senders?" in _resolve_name("recent_senders", names)[1]
     assert "backups.run or gmail.run" in _resolve_name("run", names)[1]
     assert "Found:" in _resolve_name("nope", names)[1]
+
+
+def test_local_also_takes_the_command_form(project, capsys):
+    assert main(["local", "backups", "run", "--env", "staging", "--keep", "3"]) == 0
+    assert capsys.readouterr().out.startswith("staging keep=3")

@@ -240,3 +240,20 @@ def test_function_commands_take_root():
         ["gmail", "subscriptions", "--days", "3"], "gmail")
     assert _pop_root(["--root=gmail", "gmail"]) == (["gmail"], "gmail")
     assert _pop_root(["gmail"]) == (["gmail"], None)
+
+
+def test_secret_values_come_from_env(monkeypatch):
+    from callables import Secret
+    conn = Connection("outlook", provider="microsoft", scopes=["Mail.Read"],
+                      values={"tenant": Secret("MS_TENANT_ID", default="common")})
+    assert localauth._url_values(conn, {}) == {"tenant": "common"}
+    monkeypatch.setenv("MS_TENANT_ID", "1111-2222")
+    assert localauth._fill(conn.token_url, localauth._url_values(conn, {})) == \
+        "https://login.microsoftonline.com/1111-2222/oauth2/v2.0/token"
+    monkeypatch.setenv("MS_TENANT_ID", "evil.com/x?")
+    with pytest.raises(localauth.LocalAuthError, match="MS_TENANT_ID"):
+        localauth._url_values(conn, {})
+    connection_registry.connections.clear()
+    required = Connection("outlook", provider="microsoft", values={"tenant": Secret("NEEDED_TENANT")})
+    with pytest.raises(localauth.LocalAuthError, match="NEEDED_TENANT in .env"):
+        localauth._url_values(required, {})
