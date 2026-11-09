@@ -21,8 +21,10 @@ def main(argv: list[str] | None = None) -> int:
     p_check.add_argument("--root", help=ROOT_HELP)
     p_check.add_argument("--json", action="store_true", help="Print one JSON object instead of text")
 
-    p_local = sub.add_parser("local", help="Run a function by name on this machine")
-    p_local.add_argument("name")
+    p_local = sub.add_parser("local", help="Run a function by name on this machine (no name: list them)",
+                             add_help=False)
+    p_local.add_argument("-h", "--help", action="store_true", help="Show this help and the functions you can run")
+    p_local.add_argument("name", nargs="?", help="The function's name, as listed by `call local --help`")
     p_local.add_argument("--root", help=ROOT_HELP)
     p_local.add_argument("--input", "-i", action="append", default=[], metavar="KEY=VALUE",
                          help="An input value; JSON is parsed when it can be (-i days=7 -i region=NA), "
@@ -32,6 +34,18 @@ def main(argv: list[str] | None = None) -> int:
 
     p_manifest = sub.add_parser("manifest", help="Print the JSON manifest of every @deploy function")
     p_manifest.add_argument("--root", help=ROOT_HELP)
+
+    p_connect = sub.add_parser("connect", help="Sign in to a connection's service so `call local` uses your account "
+                                               "(no name: list the project's connections and pick)")
+    p_connect.add_argument("name", nargs="?", help="The connection's name, as in Connection('google', ...)")
+    p_connect.add_argument("--root", help=ROOT_HELP)
+    p_connect.add_argument("--port", type=int, default=8765,
+                           help="Local port for the sign-in redirect (default 8765: http://localhost:8765/callback)")
+    p_connect.add_argument("--no-browser", action="store_true", help="Print the sign-in link instead of opening it")
+
+    p_disconnect = sub.add_parser("disconnect", help="Forget this machine's tokens for a connection")
+    p_disconnect.add_argument("name", nargs="?")
+    p_disconnect.add_argument("--root", help=ROOT_HELP)
 
     sub.add_parser("docs", help="Print the guide to writing automations (for people and coding agents)")
 
@@ -84,7 +98,12 @@ def main(argv: list[str] | None = None) -> int:
         return _check(root, args.json)
 
     if args.command == "local":
+        if args.help or args.name is None:
+            return _local_help(root, p_local.format_help(), asked=args.help)
         return _local(root, args.name, _parse_inputs(args.input), args.json)
+
+    if args.command in ("connect", "disconnect"):
+        return _connect(root, args)
 
     if args.command == "init":
         from callables.init import init_project
@@ -114,7 +133,7 @@ def _check(root: Path, as_json: bool) -> int:
         print()
     for conn in report.get("connections", []):
         print(f"  connection {conn['name']} ({conn['title']}): set project secrets {' and '.join(conn['secrets'])}; "
-              f"locally, put a token in .env as {conn['env_var']}")
+              f"locally, `call connect {conn['name']}` (with those two in .env)")
     if report.get("connections"):
         print()
     for issue in report["issues"]:
@@ -132,6 +151,93 @@ def _check(root: Path, as_json: bool) -> int:
     return 0 if report["ok"] else 1
 
 
+def _connect(root: Path, args) -> int:
+    from callables import connections as connection_registry
+    from callables import localauth
+    from callables.manifest import build_manifest
+
+    _load_env(root)
+    with contextlib.redirect_stdout(sys.stderr):
+        manifest = build_manifest(root, include_local=True)
+    found = connection_registry.connections
+    if args.name is None or args.name not in found:
+        _warn_import_errors(root, manifest["errors"])
+    if not found:
+        print(f"error: no connections in {root}. Declare one with Connection(...) and pass it to "
+              "@deploy(connections=[...]), or point --root at the folder your code is in.", file=sys.stderr)
+        return 1
+    if args.name is not None:
+        if args.name not in found:
+            print(f"error: no connection named '{args.name}' in this project (found: {', '.join(sorted(found))})",
+                  file=sys.stderr)
+            return 1
+        return _connect_one(found[args.name], args)
+
+    conns = sorted(found.values(), key=lambda c: c.name)
+    if not sys.stdin.isatty():
+        _list_connections(conns)
+        print(f"\nRun `call {args.command} <name>` to {args.command} one.")
+        return 0
+    failed = 0
+    while True:  # pick one, sign in, and come back to the list with its new state until they quit
+        conn = _choose_connection(conns, args.command)
+        if conn is None:
+            return 1 if failed else 0
+        failed = _connect_one(conn, args)
+        print()
+
+
+def _connect_one(conn, args) -> int:
+    from callables import localauth
+
+    if args.command == "disconnect":
+        forgot = localauth.disconnect(conn)
+        print(f"Forgot this machine's {conn.title} connection." if forgot else f"No local {conn.title} connection.")
+        return 0
+    try:
+        entry = localauth.connect(conn, port=args.port, open_browser=not args.no_browser)
+    except localauth.LocalAuthError as exc:
+        print(f"error: {conn.name}: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nCancelled.", file=sys.stderr)
+        return 1
+    print(f"Connected {conn.title} as {entry.get('account') or 'your account'}. `call local` uses it from now on "
+          f"(tokens in {localauth.store_path()}).")
+    return 0
+
+
+STATE_MARKS = {"connected": "✓", "reconnect": "!", "missing": "·", "setup": "✗"}
+
+
+def _connection_rows(conns: list) -> tuple[list[str], list[str]]:
+    from callables import localauth
+
+    states = [localauth.status(c) for c in conns]
+    width = max(len(c.name) for c in conns)
+    rows = [f"{STATE_MARKS[state]} {conn.name:<{width}}  {conn.title}: {detail}"
+            for conn, (state, detail) in zip(conns, states)]
+    return rows, [state for state, _ in states]
+
+
+def _list_connections(conns: list) -> None:
+    rows, _ = _connection_rows(conns)
+    for i, row in enumerate(rows, 1):
+        print(f"  {i}. {row}")
+
+
+def _choose_connection(conns: list, command: str):
+    """The project's connections with their local state in an arrow-key menu; returns the one picked, or None."""
+    from callables import picker
+
+    rows, states = _connection_rows(conns)
+    start = next((i for i, s in enumerate(states) if s in ("missing", "reconnect")), 0)
+    verb = "disconnect" if command == "disconnect" else "connect or reconnect"
+    print(f"Connections in this project (✓ connected  ! reconnect  · not connected  ✗ needs .env)", file=sys.stderr)
+    chosen = picker.pick(rows, f"↑/↓ or a number, Enter to {verb}, q to quit", start=start)
+    return None if chosen is None else conns[chosen]
+
+
 def _parse_inputs(pairs: list[str]) -> dict:
     inputs = {}
     for pair in pairs:
@@ -146,8 +252,42 @@ def _parse_inputs(pairs: list[str]) -> dict:
     return inputs
 
 
+def _warn_import_errors(root: Path, errors: list[dict]) -> None:
+    """Prints import errors. When a missing module is a file in a subfolder (gmail/gmail_api.py), the code was meant
+    to run from that folder, so say so."""
+    import re
+
+    folders: set[str] = set()
+    for err in errors:
+        print(f"warning: {err.get('module') or err.get('function')}: {err['error']}", file=sys.stderr)
+        missing = re.search(r"No module named '([\w.]+)'", err.get("error", ""))
+        if missing:
+            name = missing.group(1).split(".")[0]
+            folders |= {p.parent.relative_to(root).as_posix() for p in root.glob(f"*/{name}.py")}
+            folders |= {p.parent.relative_to(root).as_posix() for p in root.glob(f"*/{name}/__init__.py")}
+    for folder in sorted(folders):
+        print(f"hint: {folder}/ looks like its own project. Run from there (cd {folder}), use --root {folder}, or "
+              f"set root = \"{folder}\" in callables.toml", file=sys.stderr)
+
+
 def _field_errors(exc) -> dict[str, str]:
     return {".".join(str(p) for p in err["loc"]) or "inputs": err["msg"] for err in exc.errors()}
+
+
+def _pop_root(argv: list[str]) -> tuple[list[str], str | None]:
+    """`call <function> --root gmail ...`: --root picks the folder, like for the built-in commands."""
+    rest, root = [], None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--root" and i + 1 < len(argv):
+            root, i = argv[i + 1], i + 2
+            continue
+        if argv[i].startswith("--root="):
+            root = argv[i].split("=", 1)[1]
+        else:
+            rest.append(argv[i])
+        i += 1
+    return rest, root
 
 
 def _command(argv: list[str]) -> int:
@@ -155,15 +295,18 @@ def _command(argv: list[str]) -> int:
     from callables.manifest import build_manifest
     from callables.project import ConfigError, build_root
 
-    try:
-        root, _ = build_root(Path.cwd())
-    except ConfigError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    argv, root_arg = _pop_root(argv)
+    if root_arg is not None:
+        root = Path(root_arg).resolve()
+    else:
+        try:
+            root, _ = build_root(Path.cwd())
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     with contextlib.redirect_stdout(sys.stderr):  # import-time prints shouldn't mix with the result
         manifest = build_manifest(root, include_local=True)
-    for err in manifest["errors"]:
-        print(f"warning: {err.get('module') or err.get('function')}: {err['error']}", file=sys.stderr)
+    _warn_import_errors(root, manifest["errors"])
     fn, rest, prog = find(manifest["functions"], argv)
     if fn is None:
         group = [f for f in manifest["functions"] if (f.get("group") or {}).get("name") == argv[0]]
@@ -281,19 +424,62 @@ _env_loaded = False
 
 
 def _load_env(root: Path) -> None:
-    """The project's .env (the build folder's, then the current folder's), once per process. Never on the platform:
+    """The project's .env (the build folder's, the current folder's, then the repo's top folder), once per process. Never on the platform:
     `call run` doesn't come through here."""
     global _env_loaded
     if _env_loaded:
         return
     _env_loaded = True
-    from callables.envfile import load
+    from callables.envfile import load, repo_root
 
-    files, added = load(root, Path.cwd())
+    # Nearest first: the project folder's .env, then the current folder's, then the repo's top folder
+    files, added = load(root, Path.cwd(), *filter(None, [repo_root(root)]))
     if files:
         cwd = Path.cwd().resolve()
         shown = ", ".join(str(p.relative_to(cwd)) if p.is_relative_to(cwd) else str(p) for p in files)
         print(f"Loaded {len(added)} variable{'s' if len(added) != 1 else ''} from {shown}", file=sys.stderr)
+
+
+def _local_help(root: Path, usage: str, asked: bool) -> int:
+    """`call local --help` (or no name): the usual help, then every function in the project with its inputs."""
+    from callables.manifest import build_manifest
+
+    _load_env(root)
+    with contextlib.redirect_stdout(sys.stderr):
+        manifest = build_manifest(root, include_local=True)
+    out = sys.stdout if asked else sys.stderr
+    print(usage, file=out)
+    _warn_import_errors(root, manifest["errors"])
+    functions = sorted(manifest["functions"], key=lambda f: f["name"])
+    if not functions:
+        print("No @deploy functions found here.", file=out)
+        return 0 if asked else 2
+    width = max(len(f["name"]) for f in functions)
+    print("functions:", file=out)
+    for fn in functions:
+        inputs = ", ".join((fn.get("input_schema") or {}).get("properties", {}))
+        local = "  (local only)" if fn.get("local_only") else ""
+        print(f"  {fn['name']:<{width}}  {fn['title']}{f'  ({inputs})' if inputs else ''}{local}", file=out)
+    example = functions[0]
+    if example.get("group"):
+        print(f"\nOr as a command, with flags: call {example['group']['name']} {example['action']} --help", file=out)
+    print(f"Example: call local {example['name']}"
+          + "".join(f" -i {k}=..." for k in list((example.get('input_schema') or {}).get('properties', {}))[:1]),
+          file=out)
+    return 0 if asked else 2
+
+
+def _resolve_name(name: str, names: list[str]) -> tuple[str, str | None]:
+    """The function's exact name. A grouped function always needs its group (gmail.recent_senders): matching the
+    action alone would quietly switch functions when another group, or a plain function, takes the same name. A
+    near miss gets a suggestion instead. Returns (name, error)."""
+    wanted = name.replace("-", "_")  # function names can't contain "-", so this can't collide
+    if wanted in names:
+        return wanted, None
+    close = sorted(n for n in names if n.rsplit(".", 1)[-1] == wanted)
+    if close:
+        return name, f"No function named '{name}'. Did you mean {' or '.join(close)}?"
+    return name, f"No function named '{name}'. Found: {', '.join(sorted(names)) or 'none'}"
 
 
 def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = False) -> int:
@@ -317,13 +503,15 @@ def _local(root: Path, name: str, inputs: dict, as_json: bool, follow: bool = Fa
     out = contextlib.redirect_stdout(sys.stderr) if as_json else contextlib.nullcontext()
     with out:
         manifest = build_manifest(root, include_local=True)
-        for err in manifest["errors"]:
-            print(f"warning: {err.get('module') or err.get('function')}: {err['error']}", file=sys.stderr)
-        if name not in registry:
-            message = f"No function named '{name}'. Found: {', '.join(sorted(registry)) or 'none'}"
+        _warn_import_errors(root, manifest["errors"])
+        name, message = _resolve_name(name, list(registry))
+        if message:
             if not as_json:
                 print(message, file=sys.stderr)
             return report({"ok": False, "error": message, "import_errors": manifest["errors"]})
+        from callables.localauth import provide
+
+        provide(registry[name].all_connections)  # tokens from `call connect`, like the platform injects them
         try:
             result = finish(registry[name].call(inputs))
         except ValidationError as exc:

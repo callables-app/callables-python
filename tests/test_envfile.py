@@ -111,3 +111,15 @@ def test_the_platform_runner_ignores_the_env_file(project, monkeypatch, capsys, 
     main(["run", f"env_{request.node.name}:token", "--root", str(project)])
     assert "missing" in capsys.readouterr().out
     assert "CALLABLES_T_TOKEN" not in os.environ
+
+
+def test_a_env_at_the_top_of_the_repo_is_found_from_a_project_folder(tmp_path, monkeypatch):
+    from callables.envfile import repo_root
+    (tmp_path / ".git").mkdir()
+    project = tmp_path / "gmail"
+    project.mkdir()
+    assert repo_root(project) == tmp_path
+    (tmp_path / ".env").write_text("CALLABLES_T_TOKEN=top\n")
+    monkeypatch.delenv("CALLABLES_T_TOKEN", raising=False)
+    files, _ = load(project, repo_root(project))
+    assert files == [tmp_path / ".env"] and os.environ["CALLABLES_T_TOKEN"] == "top"

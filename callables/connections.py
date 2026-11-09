@@ -195,9 +195,9 @@ class Connection:
         value = os.environ.get(self.env_var)
         if not value:
             raise ConnectionNotAvailable(
-                f"Connection '{self.name}' has no token here. It's only set while the function runs on Callables, "
-                f"for a function that declares connections=[{self.name}]. To run it locally, put a token for your own "
-                f"account in .env as {self.env_var}")
+                f"Connection '{self.name}' has no token here. On Callables it's set for functions that declare "
+                f"connections=[{self.name}]. To run it locally, run `call connect {self.name}` once, or put a token "
+                f"for your own account in .env as {self.env_var}")
         return value
 
     def _details(self) -> dict[str, Any]:

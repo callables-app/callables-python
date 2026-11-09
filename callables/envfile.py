@@ -1,4 +1,4 @@
-"""`.env` for local runs. `call local` and `call <group> <action>` load the project's `.env` so a function finds the
+"""`.env` for local runs (the project folder's, the current folder's, then the repo's top folder). `call local` and `call <group> <action>` load the project's `.env` so a function finds the
 secrets it would get on the platform. Variables already set win, and the platform (`call run`) never reads it."""
 import os
 from pathlib import Path
@@ -38,6 +38,15 @@ def parse(text: str) -> dict[str, str]:
             value = value.split(" #", 1)[0].rstrip()
         values[key] = value
     return values
+
+
+def repo_root(folder: Path) -> Path | None:
+    """The git repo holding `folder`, so a `.env` at the top of a repo with several projects (gmail/, crm/) works
+    from any of them."""
+    for parent in [Path(folder).resolve(), *Path(folder).resolve().parents]:
+        if (parent / ".git").exists():
+            return parent
+    return None
 
 
 def load(*folders: Path) -> tuple[list[Path], list[str]]:

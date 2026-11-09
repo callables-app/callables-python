@@ -136,3 +136,23 @@ def test_help_and_mistakes(project, capsys):
 def test_local_takes_full_names_too(project, capsys):
     assert main(["local", "backups.run", "-i", "keep=1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["value"].startswith("prod keep=1")
+
+
+def test_local_help_lists_the_functions_you_can_run(project, capsys):
+    assert main(["local", "--help"]) == 0
+    out = capsys.readouterr().out
+    assert "usage: call local" in out and "functions:" in out
+    assert "backups.run" in out and "Back up now" in out and "(env, keep, dry_run" in out
+    assert main(["local"]) == 2  # no name: same list, on stderr
+    assert "Back up now" in capsys.readouterr().err
+
+
+def test_local_needs_the_group_and_suggests_it():
+    from callables.cli import _resolve_name
+    names = ["gmail.recent_senders", "gmail.run", "backups.run", "hello"]
+    assert _resolve_name("gmail.recent_senders", names) == ("gmail.recent_senders", None)
+    assert _resolve_name("gmail.recent-senders", names) == ("gmail.recent_senders", None)
+    assert _resolve_name("hello", names) == ("hello", None)
+    assert "Did you mean gmail.recent_senders?" in _resolve_name("recent_senders", names)[1]
+    assert "backups.run or gmail.run" in _resolve_name("run", names)[1]
+    assert "Found:" in _resolve_name("nope", names)[1]

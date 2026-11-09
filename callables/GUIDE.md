@@ -10,7 +10,7 @@ The person running an automation can't see the code, a traceback or a terminal. 
 
 1. Write or change a function decorated with `@deploy`.
 2. `call check` (or `call check --json`) lists every problem a deploy would hit, with a fix for each. Exit code 1 means the deploy would fail.
-3. `call local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform. It loads the project's `.env` first, so it finds the secrets the platform would give it.
+3. `call local <name> -i key=value --json` runs the function on this machine, with the same input validation as the platform (`call local --help` lists the functions and their inputs). A grouped function's name always includes its group: `call local gmail.recent_senders`, or `call gmail recent_senders` as a command. It loads the project's `.env` first, so it finds the secrets the platform would give it.
 4. Push. The platform builds and deploys on push.
 
 Run `call check` before every push. If any module fails to import, nothing is published.
@@ -44,7 +44,7 @@ def closed_deals(region: Literal["NA", "EMEA", "APAC"] = "NA", since: date | Non
 - `name`: the function's identity on the platform. It defaults to the function name. **Renaming it creates a new automation**, and the old one's history and schedules stay behind. Pass `name="..."` to keep the identity if you rename the Python function.
 - `title`: the card and page heading. It defaults to the name, turned into a sentence.
 - `description`: the first paragraph of the docstring is the default. Write one plain-language sentence about what it does for the person.
-- `secrets`: names of environment variables, which builders set in the web app. Read them with `os.environ["CRM_TOKEN"]`. Never hard-code credentials and never take them as inputs. A declared secret that nobody has set doesn't block the run: the variable is simply missing, and builders see a "missing secrets" warning. For an optional secret, declare it and read it with `os.environ.get(...)`. Locally, `call local` and `call <group> <action>` load `.env` from the build folder, then the folder you run from, without overriding variables already set in your shell. The platform never reads `.env`. Each secret is a single value, so a key file such as a `.pem` goes in as the file's contents, and the code reads it from the variable.
+- `secrets`: names of environment variables, which builders set in the web app. Read them with `os.environ["CRM_TOKEN"]`. Never hard-code credentials and never take them as inputs. A declared secret that nobody has set doesn't block the run: the variable is simply missing, and builders see a "missing secrets" warning. For an optional secret, declare it and read it with `os.environ.get(...)`. Locally, `call local` and `call <group> <action>` load `.env` from the build folder, then the folder you run from, then the top of the git repo (handy when one repo holds several projects), without overriding variables already set in your shell. The platform never reads `.env`. Each secret is a single value, so a key file such as a `.pem` goes in as the file's contents, and the code reads it from the variable.
 - `connections`: `Connection` objects for accounts each person connects themselves, such as their Gmail. See Connections below.
 - `timeout`: in seconds. The default is 300 and the maximum is 900.
 - `schedule`: a cron expression in UTC, for schedules owned by the code. Only use it when the user asks for one. Anyone can add a schedule in the web app, so you usually don't need it.
@@ -172,7 +172,7 @@ def triage_inbox() -> str:
 - Each person connects once per project, on the service's own consent screen, the first time they open a function that needs it. A run uses the connection of the person who started it, or of the person who made the schedule, never anyone else's. If they haven't connected, the run doesn't start.
 - The connection's name is its identity. Renaming it makes everyone connect again. Use one connection per service per project with every scope the project needs.
 - `Group(..., connections=[google])` declares a connection for every action in a group.
-- Locally, put a token for your own account in `.env` as `<NAME>_ACCESS_TOKEN`. Builders try the real flow from the project page's Connections card.
+- Locally, run `call connect` once (it shows the project's connections and their state in a menu: arrow keys or a number to pick; `call connect <name>` goes straight to one): it signs you in through the browser with your own OAuth app (put `<NAME>_CLIENT_ID` and `<NAME>_CLIENT_SECRET` in `.env`, and add `http://localhost:8765/callback` as a redirect URI on the app), keeps the tokens in your user config folder, and `call local` refreshes them. `call disconnect <name>` forgets them. A `<NAME>_ACCESS_TOKEN` you set yourself (shell or `.env`) wins, for CI or a token from elsewhere. Builders try the deployed flow from the project page's Connections card.
 - Ask for the narrowest scopes that work. Never take tokens, passwords or account emails as form inputs.
 - Full reference: https://callables.app/docs/connections
 
@@ -278,6 +278,7 @@ Raise exceptions with messages written for the person running the automation. Th
 - `call check [--json]`: problems a deploy would hit, with fixes. Exit code 1 on errors.
 - `call <group> <action> [--flags]` (or `call <function> [--flags]`): run a function like a CLI command. Each input is a flag (`days` becomes `--days`, a bool becomes `--dry-run/--no-dry-run`, a list takes several values). Add `--help` to see them. Loads the project's `.env` first, like `call local`.
 - `call local <name> [-i key=value ...] [--json]`: run a function on this machine, after loading the project's `.env` (variables already set win). Values are parsed as JSON when possible, and `@path` passes a file. `--json` prints one JSON object on stdout (`ok`, `value`, `files`, `error`, `field_errors`), and the function's own prints go to stderr.
+- `call connect [name]` / `call disconnect [name]`: with no name, a menu of the project's connections and their local state; sign in to a connection's service on this machine (or forget it), so `call local` runs with your own account. `--port` changes the local redirect port, `--no-browser` prints the link.
 - `call manifest`: the full JSON the platform reads, including each input's JSON Schema. Local `@command`s are left out.
 - `call docs`: prints this guide.
 - `call init`: an example automation plus agent instructions (`.claude/skills/callables/SKILL.md` and an `AGENTS.md` section). Run it again after upgrading the SDK to refresh the instructions.
