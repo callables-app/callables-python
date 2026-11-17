@@ -84,6 +84,33 @@ def _check_next(fn: dict[str, Any], by_name: dict[str, dict[str, Any]]) -> list[
     return issues
 
 
+def _check_includes(root: Path) -> list[dict[str, Any]]:
+    from callables.project import ConfigError, _configured_includes, layout, repo_for
+
+    root = root.resolve()
+    try:
+        configured = _configured_includes(root)
+    except ConfigError:
+        return []  # build_manifest already reported it
+    if configured is None:
+        return []
+    repo = repo_for(root)
+    if repo is None or repo == root:
+        return [_issue("warning", f"include in {configured[1]} does nothing here: "
+                       + ("this is the whole repo, so every folder is already in the build" if repo == root
+                          else "run it from the top of the repo (or use git) so include knows where the folders are"),
+                       fix="Use include in the callables.toml of a subfolder that's built on its own")]
+    try:
+        base, _ = layout(root)
+    except ConfigError:
+        return []
+    issues = []
+    if not (root / "requirements.txt").is_file() and (root / "pyproject.toml").is_file():
+        issues.append(_issue("error", "With include, dependencies must be in requirements.txt: pyproject.toml "
+                             "dependencies aren't installed", fix=f"Add requirements.txt to {root.relative_to(base)}/"))
+    return issues
+
+
 def check_project(root: Path) -> dict[str, Any]:
     manifest = build_manifest(root, include_local=True)
     issues = []
@@ -101,6 +128,7 @@ def check_project(root: Path) -> dict[str, Any]:
     for fn in manifest["functions"]:
         issues.extend(_check_function(fn))
         issues.extend(_check_next(fn, by_name))
+    issues.extend(_check_includes(Path(root)))
     if not (Path(root) / "requirements.txt").is_file() and not (Path(root) / "pyproject.toml").is_file():
         issues.append(_issue("warning", "No requirements.txt, so only the standard library is installed",
                              fix="List your dependencies (not callables itself) in requirements.txt"))

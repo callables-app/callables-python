@@ -11,8 +11,10 @@ SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "tes
 MANIFEST_VERSION = 1
 
 
-def discover_modules(root: Path) -> list[str]:
-    """Dotted names of every module under root that mentions callables, so they can be imported."""
+def discover_modules(root: Path, base: Path | None = None) -> list[str]:
+    """Dotted names of every module under root that mentions callables, so they can be imported. Names are relative
+    to `base` (default: root), the folder on sys.path."""
+    base = base or root
     modules = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
@@ -26,7 +28,7 @@ def discover_modules(root: Path) -> list[str]:
                 continue
             if "callables" not in text or ("deploy" not in text and "command" not in text):
                 continue
-            rel = path.relative_to(root).with_suffix("")
+            rel = path.relative_to(base).with_suffix("")
             parts = list(rel.parts)
             if parts[-1] == "__init__":
                 parts = parts[:-1]
@@ -35,19 +37,50 @@ def discover_modules(root: Path) -> list[str]:
     return modules
 
 
+def _outside_includes(root: Path, base: Path, folders: list[Path]) -> list[dict[str, str]]:
+    """Locally the whole repo is importable, but the platform builds only the folder and its includes: report any
+    module loaded from elsewhere in the repo, which would fail to import there."""
+    errors = []
+    for name, module in list(sys.modules.items()):
+        file = getattr(module, "__file__", None)
+        if not file:
+            continue
+        path = Path(file).resolve()
+        if not path.is_relative_to(base) or any(path.is_relative_to(f) for f in folders):
+            continue
+        if any(part in SKIP_DIRS or part.startswith(".") for part in path.relative_to(base).parts[:-1]):
+            continue  # a virtualenv or tooling inside the repo, not project code
+        folder = path.parent.relative_to(base).as_posix()
+        if folder == ".":
+            errors.append({"module": name, "error": f"imported from {path.name} at the top of the repo, which isn't "
+                           "in the build. Move it into a folder and add that folder to include"})
+            continue
+        errors.append({"module": name, "error": f"imported from {folder}/, which isn't in the build. Add \"{folder}\" "
+                       f"to include in {root.relative_to(base).as_posix()}/callables.toml"})
+    return errors
+
+
 def build_manifest(root: Path, include_local: bool = False) -> dict[str, Any]:
     """What the platform deploys. `include_local` adds the @command functions, for the CLI and `call check`."""
     from callables import __version__
+    from callables.project import ConfigError, layout
 
     root = root.resolve()
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
     errors = []
-    for module in discover_modules(root):
+    try:
+        base, folders = layout(root)
+    except ConfigError as exc:
+        base, folders = root, [root]
+        errors.append({"module": "include", "error": str(exc)})
+    if str(base) not in sys.path:
+        sys.path.insert(0, str(base))
+    for module in dict.fromkeys(m for folder in folders for m in discover_modules(folder, base)):
         try:
             importlib.import_module(module)
         except Exception as exc:  # report every broken module, not just the first
             errors.append({"module": module, "error": f"{type(exc).__name__}: {exc}"})
+    if base != root:
+        errors.extend(_outside_includes(root, base, folders))
 
     functions = []
     for fn in sorted(registry.values(), key=lambda f: f.name):
